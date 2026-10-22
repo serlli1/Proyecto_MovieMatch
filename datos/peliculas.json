@@ -1,0 +1,380 @@
+[
+  {
+    "id": 1,
+    "titulo": "Interstellar",
+    "anio": 2014,
+    "generos": [
+      "Ciencia ficción",
+      "Drama"
+    ],
+    "sinopsis": "Un equipo de astronautas atraviesa un agujero de gusano para encontrar un planeta habitable mientras una familia lucha contra la separación y el paso del tiempo."
+  },
+  {
+    "id": 2,
+    "titulo": "Origen",
+    "anio": 2010,
+    "generos": [
+      "Ciencia ficción",
+      "Suspense"
+    ],
+    "sinopsis": "Un especialista se introduce en los sueños de otras personas para robar secretos y recibe la misión de implantar una idea en la mente de un empresario."
+  },
+  {
+    "id": 3,
+    "titulo": "Matrix",
+    "anio": 1999,
+    "generos": [
+      "Ciencia ficción",
+      "Acción"
+    ],
+    "sinopsis": "Un programador descubre que su realidad cotidiana es una simulación creada por máquinas y se une a una rebelión para liberar a la humanidad."
+  },
+  {
+    "id": 4,
+    "titulo": "Blade Runner 2049",
+    "anio": 2017,
+    "generos": [
+      "Ciencia ficción",
+      "Drama"
+    ],
+    "sinopsis": "Un agente encargado de localizar androides investiga un secreto que cuestiona la frontera entre seres humanos y máquinas."
+  },
+  {
+    "id": 5,
+    "titulo": "La llegada",
+    "anio": 2016,
+    "generos": [
+      "Ciencia ficción",
+      "Drama"
+    ],
+    "sinopsis": "Una lingüista intenta comunicarse con visitantes extraterrestres y descubre una forma de entender el tiempo que cambia su propia vida."
+  },
+  {
+    "id": 6,
+    "titulo": "Regreso al futuro",
+    "anio": 1985,
+    "generos": [
+      "Ciencia ficción",
+      "Comedia"
+    ],
+    "sinopsis": "Un adolescente viaja accidentalmente al pasado en un coche convertido en máquina del tiempo y debe lograr que sus padres se conozcan."
+  },
+  {
+    "id": 7,
+    "titulo": "Atrapado en el tiempo",
+    "anio": 1993,
+    "generos": [
+      "Comedia",
+      "Fantasía"
+    ],
+    "sinopsis": "Un meteorólogo revive una y otra vez el mismo día en un pequeño pueblo hasta que empieza a cambiar su manera de vivir."
+  },
+  {
+    "id": 8,
+    "titulo": "Memento",
+    "anio": 2000,
+    "generos": [
+      "Suspense",
+      "Misterio"
+    ],
+    "sinopsis": "Un hombre incapaz de formar recuerdos recientes sigue pistas y fotografías mientras investiga un crimen y duda de su propia memoria."
+  },
+  {
+    "id": 9,
+    "titulo": "Shutter Island",
+    "anio": 2010,
+    "generos": [
+      "Suspense",
+      "Misterio"
+    ],
+    "sinopsis": "Dos agentes llegan a una institución psiquiátrica aislada en una isla para investigar una desaparición, pero las pistas ponen en duda lo que parece real."
+  },
+  {
+    "id": 10,
+    "titulo": "El truco final",
+    "anio": 2006,
+    "generos": [
+      "Drama",
+      "Misterio"
+    ],
+    "sinopsis": "Dos ilusionistas rivales se obsesionan con superar sus trucos de magia hasta llevar la competencia a consecuencias extremas."
+  },
+  {
+    "id": 11,
+    "titulo": "Parásitos",
+    "anio": 2019,
+    "generos": [
+      "Drama",
+      "Suspense"
+    ],
+    "sinopsis": "Una familia con pocos recursos se infiltra poco a poco en el hogar de una familia adinerada y surgen tensiones entre dos mundos sociales."
+  },
+  {
+    "id": 12,
+    "titulo": "Toy Story",
+    "anio": 1995,
+    "generos": [
+      "Animación",
+      "Aventura"
+    ],
+    "sinopsis": "Los juguetes de un niño cobran vida cuando nadie los ve y un vaquero debe aprender a convivir con un nuevo héroe espacial."
+  },
+  {
+    "id": 13,
+    "titulo": "Coco",
+    "anio": 2017,
+    "generos": [
+      "Animación",
+      "Fantasía"
+    ],
+    "sinopsis": "Un niño apasionado por la música viaja al mundo de los muertos y descubre secretos de su familia y la importancia del recuerdo."
+  },
+  {
+    "id": 14,
+    "titulo": "Del revés",
+    "anio": 2015,
+    "generos": [
+      "Animación",
+      "Comedia"
+    ],
+    "sinopsis": "Las emociones que viven dentro de la mente de una niña intentan ayudarla a adaptarse a una mudanza y a los cambios de su infancia."
+  },
+  {
+    "id": 15,
+    "titulo": "El viaje de Chihiro",
+    "anio": 2001,
+    "generos": [
+      "Animación",
+      "Fantasía"
+    ],
+    "sinopsis": "Una niña queda atrapada en un mundo de espíritus y criaturas mágicas y debe encontrar la manera de salvar a sus padres."
+  },
+  {
+    "id": 16,
+    "titulo": "Parque Jurásico",
+    "anio": 1993,
+    "generos": [
+      "Aventura",
+      "Ciencia ficción"
+    ],
+    "sinopsis": "Un parque temático repleto de dinosaurios clonados pierde sus sistemas de seguridad y sus visitantes deben sobrevivir."
+  },
+  {
+    "id": 17,
+    "titulo": "Tiburón",
+    "anio": 1975,
+    "generos": [
+      "Suspense",
+      "Aventura"
+    ],
+    "sinopsis": "Una comunidad costera vive aterrorizada por los ataques de un enorme tiburón y tres hombres salen al mar para detenerlo."
+  },
+  {
+    "id": 18,
+    "titulo": "Titanic",
+    "anio": 1997,
+    "generos": [
+      "Romance",
+      "Drama"
+    ],
+    "sinopsis": "Dos jóvenes de clases sociales distintas se enamoran durante un viaje en un trasatlántico que se dirige hacia una catástrofe."
+  },
+  {
+    "id": 19,
+    "titulo": "Gladiator",
+    "anio": 2000,
+    "generos": [
+      "Acción",
+      "Drama"
+    ],
+    "sinopsis": "Un general romano traicionado acaba convertido en gladiador y lucha por obtener justicia frente al emperador."
+  },
+  {
+    "id": 20,
+    "titulo": "Marte",
+    "anio": 2015,
+    "generos": [
+      "Ciencia ficción",
+      "Aventura"
+    ],
+    "sinopsis": "Un astronauta abandonado por error en Marte usa conocimientos científicos y cultivos improvisados para sobrevivir hasta que puedan rescatarlo."
+  },
+  {
+    "id": 21,
+    "titulo": "Gravity",
+    "anio": 2013,
+    "generos": [
+      "Ciencia ficción",
+      "Suspense"
+    ],
+    "sinopsis": "Dos astronautas quedan a la deriva después de que una nube de desechos destruya su nave y deben encontrar una forma de regresar a la Tierra."
+  },
+  {
+    "id": 22,
+    "titulo": "Her",
+    "anio": 2013,
+    "generos": [
+      "Romance",
+      "Ciencia ficción"
+    ],
+    "sinopsis": "Un hombre solitario desarrolla una relación emocional con un sistema operativo de inteligencia artificial que aprende y evoluciona."
+  },
+  {
+    "id": 23,
+    "titulo": "Ex Machina",
+    "anio": 2014,
+    "generos": [
+      "Ciencia ficción",
+      "Suspense"
+    ],
+    "sinopsis": "Un joven programador participa en un experimento para evaluar una inteligencia artificial con apariencia humana y descubre dilemas sobre conciencia y control."
+  },
+  {
+    "id": 24,
+    "titulo": "WALL·E",
+    "anio": 2008,
+    "generos": [
+      "Animación",
+      "Ciencia ficción"
+    ],
+    "sinopsis": "Un pequeño robot que limpia una Tierra deshabitada conoce a otra máquina y comienza una aventura que puede cambiar el futuro de la humanidad."
+  },
+  {
+    "id": 25,
+    "titulo": "El show de Truman",
+    "anio": 1998,
+    "generos": [
+      "Drama",
+      "Ciencia ficción"
+    ],
+    "sinopsis": "Un hombre lleva una vida aparentemente perfecta sin saber que todo su mundo es un gigantesco programa televisivo controlado por otros."
+  },
+  {
+    "id": 26,
+    "titulo": "La red social",
+    "anio": 2010,
+    "generos": [
+      "Drama"
+    ],
+    "sinopsis": "Un universitario crea una plataforma social que crece rápidamente mientras las disputas entre fundadores complican sus amistades."
+  },
+  {
+    "id": 27,
+    "titulo": "Whiplash",
+    "anio": 2014,
+    "generos": [
+      "Drama"
+    ],
+    "sinopsis": "Un estudiante de batería se enfrenta a un profesor de música extremadamente exigente y sacrifica mucho por alcanzar la excelencia."
+  },
+  {
+    "id": 28,
+    "titulo": "El caballero oscuro",
+    "anio": 2008,
+    "generos": [
+      "Acción",
+      "Drama"
+    ],
+    "sinopsis": "Un vigilante enmascarado trata de proteger una ciudad del caos provocado por un criminal que desafía todas las reglas."
+  },
+  {
+    "id": 29,
+    "titulo": "Ratatouille",
+    "anio": 2007,
+    "generos": [
+      "Animación",
+      "Comedia"
+    ],
+    "sinopsis": "Una rata con un talento extraordinario para cocinar sueña con convertirse en chef en un restaurante parisino."
+  },
+  {
+    "id": 30,
+    "titulo": "Up",
+    "anio": 2009,
+    "generos": [
+      "Animación",
+      "Aventura"
+    ],
+    "sinopsis": "Un anciano eleva su casa con miles de globos para cumplir un sueño de juventud y termina viajando con un niño explorador."
+  },
+  {
+    "id": 31,
+    "titulo": "Harry Potter y la piedra filosofal",
+    "anio": 2001,
+    "generos": [
+      "Fantasía",
+      "Aventura"
+    ],
+    "sinopsis": "Un niño descubre que es mago e ingresa en una escuela de magia donde conoce amigos y se enfrenta a un misterio peligroso."
+  },
+  {
+    "id": 32,
+    "titulo": "El señor de los anillos: La comunidad del anillo",
+    "anio": 2001,
+    "generos": [
+      "Fantasía",
+      "Aventura"
+    ],
+    "sinopsis": "Un hobbit emprende un largo viaje con una comunidad de aliados para destruir un anillo de inmenso poder."
+  },
+  {
+    "id": 33,
+    "titulo": "Náufrago",
+    "anio": 2000,
+    "generos": [
+      "Aventura",
+      "Drama"
+    ],
+    "sinopsis": "Un empleado sobrevive a un accidente aéreo y queda aislado en una isla desierta, donde debe aprender a obtener recursos y resistir la soledad."
+  },
+  {
+    "id": 34,
+    "titulo": "Buscando a Nemo",
+    "anio": 2003,
+    "generos": [
+      "Animación",
+      "Aventura"
+    ],
+    "sinopsis": "Un pez padre cruza el océano junto a una compañera olvidadiza para encontrar a su hijo desaparecido."
+  },
+  {
+    "id": 35,
+    "titulo": "Los otros",
+    "anio": 2001,
+    "generos": [
+      "Terror",
+      "Misterio"
+    ],
+    "sinopsis": "Una mujer vive con sus hijos en una mansión aislada donde suceden fenómenos inexplicables y se cuestiona quién habita realmente la casa."
+  },
+  {
+    "id": 36,
+    "titulo": "El código fuente",
+    "anio": 2011,
+    "generos": [
+      "Ciencia ficción",
+      "Suspense"
+    ],
+    "sinopsis": "Un soldado despierta repetidamente dentro de los últimos minutos de la vida de otra persona para encontrar al responsable de un atentado."
+  },
+  {
+    "id": 37,
+    "titulo": "La vida es bella",
+    "anio": 1997,
+    "generos": [
+      "Drama",
+      "Comedia"
+    ],
+    "sinopsis": "Un padre intenta proteger la imaginación y la esperanza de su hijo mientras ambos sufren el horror de un campo de concentración."
+  },
+  {
+    "id": 38,
+    "titulo": "El gran hotel Budapest",
+    "anio": 2014,
+    "generos": [
+      "Comedia",
+      "Misterio"
+    ],
+    "sinopsis": "Un conserje y su joven ayudante viven una aventura llena de robos, persecuciones y secretos en un elegante hotel europeo."
+  }
+]
