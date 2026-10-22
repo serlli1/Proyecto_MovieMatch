@@ -1,31 +1,50 @@
-# Entornos virtuales
+# ============================================
+# ENTORNOS VIRTUALES
+# ============================================
 .venv/
 venv/
 env/
 
-# Python
+# ============================================
+# PYTHON
+# ============================================
 __pycache__/
 *.pyc
 .pytest_cache/
 
-# macOS
+# ============================================
+# MACOS Y EDITORES
+# ============================================
 .DS_Store
+.vscode/
+.idea/
 
-# Configuración local y secretos
+# ============================================
+# CONFIGURACIÓN Y SECRETOS
+# ============================================
 .env
 .env.*
 .streamlit/secrets.toml
 
-# Almacenamiento local de bases de datos
+# ============================================
+# BASES DE DATOS Y ALMACENAMIENTO LOCAL
+# ============================================
 qdrant_storage/
 qdrant_data/
 nebula_data/
+datos/*.duckdb*
 
-# Archivos temporales y versiones antiguas
+# ============================================
+# DATOS DESCARGADOS Y GENERADOS
+# ============================================
+datos/fuentes/
+datos/procesados/
+datos/catalogo_*.json
+datos/reporte_*.json
+
+# ============================================
+# ARCHIVOS TEMPORALES Y ANTIGUOS
+# ============================================
 *.zip
 app_anterior.py
 MovieMatch_actualizacion_Streamlit/
-
-# Editores
-.vscode/
-.idea/

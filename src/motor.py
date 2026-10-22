@@ -4,7 +4,7 @@ from functools import lru_cache
 from qdrant_client import QdrantClient, models
 from sentence_transformers import SentenceTransformer
 
-COLECCION = "peliculas"
+COLECCION = "peliculas_v2"
 MODELO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 URL_QDRANT = os.getenv("QDRANT_URL", "http://localhost:6333")
 
