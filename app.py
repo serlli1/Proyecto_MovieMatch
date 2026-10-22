@@ -1,18 +1,7 @@
-"""MovieMatch — buscador semántico de películas con Qdrant.
-
-Ejecutar desde la carpeta MovieMatch_Qdrant:
-    python -m streamlit run app.py
-
-Esta versión presenta exclusivamente la búsqueda semántica y sus filtros.
-Las herramientas de comparación e inserción por línea de comandos se conservan
-en los scripts originales del proyecto.
-"""
-from datetime import datetime
-
+"""Buscador Streamlit: python -m streamlit run app.py."""
 import streamlit as st
 
-from src.interfaz import obtener_catalogo
-from src.motor import COLECCION, buscar_semanticamente, cliente
+from src.motor import buscar_semanticamente, obtener_metadatos
 
 st.set_page_config(
     page_title="MovieMatch · Descubre tu película",
@@ -38,10 +27,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-def tarjeta_pelicula(pelicula, puesto, score):
+def tarjeta_pelicula(pelicula, puesto, similitud):
     """Muestra título, géneros, sinopsis y similitud de un resultado."""
     titulo = str(pelicula.get("titulo", "Sin título"))
-    anio = pelicula.get("anio", "—")
+    anio = pelicula.get("anio") or "—"
     generos = ", ".join(pelicula.get("generos", [])) or "Sin género"
 
     with st.container(border=True):
@@ -50,7 +39,7 @@ def tarjeta_pelicula(pelicula, puesto, score):
             st.markdown(f"**{puesto:02d} · {titulo} ({anio})**")
             st.caption(generos)
         with marcador:
-            st.metric("Similitud", f"{score:.4f}")
+            st.metric("Similitud", f"{similitud:.4f}")
         st.write(pelicula.get("sinopsis", ""))
 
 
@@ -62,26 +51,27 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Comprobación de Qdrant y lectura de metadatos para ofrecer los filtros.
-try:
-    db = cliente()
-    if not db.collection_exists(COLECCION):
-        st.warning(f"Qdrant está activo, pero la colección '{COLECCION}' aún no existe.")
-        st.code("python cargar.py", language="bash")
-        st.stop()
 
-    total = db.count(collection_name=COLECCION, exact=True).count
-    catalogo = obtener_catalogo()
+@st.cache_data(ttl=300, show_spinner=False)
+def metadatos_catalogo():
+    return obtener_metadatos()
+
+
+try:
+    total, generos_catalogo, anios = metadatos_catalogo()
 except Exception as exc:
     st.error("No se ha podido conectar con Qdrant o recuperar el catálogo.")
     st.info("Comprueba que Docker Desktop está iniciado y que has ejecutado `docker compose up -d`.")
+    st.info("Si falta el catálogo, ejecuta `python cargar_movielens.py` después del ETL.")
     with st.expander("Detalles técnicos"):
         st.exception(exc)
     st.stop()
 
-generos_catalogo = sorted({str(g) for p in catalogo for g in p.get("generos", [])})
-anios = [int(p["anio"]) for p in catalogo if p.get("anio") is not None]
-minimo, maximo = (min(anios), max(anios)) if anios else (1900, datetime.now().year)
+minimo = None
+maximo = None
+if anios:
+    minimo = min(anios)
+    maximo = max(anios)
 
 with st.sidebar:
     st.title("⚙️ Panel de búsqueda")
@@ -89,18 +79,26 @@ with st.sidebar:
     st.metric("Películas", total)
     st.subheader("Filtros")
     genero_elegido = st.selectbox("Género", ["Todos"] + generos_catalogo)
-    if minimo < maximo:
+    if anios and minimo < maximo:
         anos_elegidos = st.slider(
             "Año de estreno", min_value=minimo, max_value=maximo,
             value=(minimo, maximo), step=1,
         )
     else:
-        st.caption(f"Año disponible: {minimo}")
+        if anios:
+            st.caption(f"Año disponible: {minimo}")
+        else:
+            st.caption("Sin años disponibles")
         anos_elegidos = (minimo, maximo)
+    st.caption("El intervalo completo incluye películas sin año; al acotarlo, se excluyen.")
     limite = st.slider("Número de resultados", min_value=3, max_value=15, value=5)
 
-genero = None if genero_elegido == "Todos" else genero_elegido
+genero = None
+if genero_elegido != "Todos":
+    genero = genero_elegido
 desde, hasta = anos_elegidos
+if anos_elegidos == (minimo, maximo):
+    desde, hasta = None, None
 
 st.subheader("¿Qué te apetece ver hoy?")
 st.caption("Describe una trama, situación o temática. No necesitas conocer el título de la película.")
@@ -117,23 +115,26 @@ with st.form("form_buscar"):
 
 if enviar:
     st.session_state.ultima_consulta = consulta.strip()
+    if not st.session_state.ultima_consulta:
+        st.warning("Escribe un texto para buscar.")
 
 if st.session_state.get("ultima_consulta"):
     texto = st.session_state.ultima_consulta
-    with st.spinner("Generando el embedding y consultando Qdrant..."):
+    with st.spinner("Buscando películas..."):
         try:
             resultados = buscar_semanticamente(
                 texto, genero=genero, desde=desde, hasta=hasta, limite=limite
             )
         except Exception as exc:
             st.error("No se pudo completar la búsqueda semántica.")
-            st.exception(exc)
-            resultados = []
+            with st.expander("Detalles técnicos"):
+                st.exception(exc)
+            st.stop()
 
     st.caption(f"{len(resultados)} resultados · búsqueda semántica · similitud coseno")
     if resultados:
         for puesto, resultado in enumerate(resultados, 1):
-            tarjeta_pelicula(resultado.payload or {}, puesto, score=resultado.score)
+            tarjeta_pelicula(resultado.payload or {}, puesto, similitud=resultado.score)
     else:
         st.info("No se encontraron películas con estos filtros. Prueba otros criterios.")
     st.caption("La similitud coseno no es una probabilidad ni un porcentaje de acierto.")

@@ -1,18 +1,14 @@
 -- MovieMatch | ETL MovieLens + TMDB
 -- Este SQL se ejecuta desde 03_etl_duckdb.py.
 -- Las rutas entre {{...}} se sustituyen por rutas locales previamente escapadas.
--- @PASO
 -- 1. Importar los CSV originales conservando todos los campos como texto.
 -- El esquema de la fuente queda disponible para inspeccionar problemas.
 CREATE OR REPLACE TABLE ml_movies_raw AS
 SELECT * FROM read_csv({{MOVIES_CSV}}, header = true, all_varchar = true);
--- @PASO
 CREATE OR REPLACE TABLE ml_links_raw AS
 SELECT * FROM read_csv({{LINKS_CSV}}, header = true, all_varchar = true);
--- @PASO
 CREATE OR REPLACE TABLE ml_ratings_raw AS
 SELECT * FROM read_csv({{RATINGS_CSV}}, header = true, all_varchar = true);
--- @PASO
 -- Algunos registros de la fuente TMDB tienen una estructura irregular.
 -- Se omiten solo las filas del CSV con errores de lectura.
 CREATE OR REPLACE TABLE tmdb_raw AS
@@ -24,7 +20,6 @@ SELECT * FROM read_csv(
     null_padding = true,
     max_line_size = 2000000
 );
--- @PASO
 -- 2. Catálogo base de MovieLens: título, año y géneros traducidos.
 CREATE OR REPLACE TABLE ml_peliculas AS
 SELECT
@@ -58,7 +53,6 @@ SELECT
         ELSE g END)
     END AS generos
 FROM ml_movies_raw;
--- @PASO
 -- 3. Relación con proveedores externos, sin perder ceros de IMDb.
 CREATE OR REPLACE TABLE ml_enlaces AS
 WITH l AS (
@@ -75,7 +69,6 @@ SELECT
                            CAST(GREATEST(7, LENGTH(CAST(imdb_num AS VARCHAR))) AS INTEGER), '0')
     END AS imdbId
 FROM l;
--- @PASO
 -- 4. Normalizar metadatos TMDB: IDs numéricos y sinopsis.
 -- No se emparejan registros por título: únicamente mediante tmdbId +
 -- una validación adicional de IMDb cuando los dos proveedores lo incluyen.
@@ -86,7 +79,6 @@ SELECT
     NULLIF(TRIM(REGEXP_REPLACE(overview, '\s+', ' ', 'g')), '') AS sinopsis,
     TRY_CAST(SUBSTR(release_date, 1, 4) AS INTEGER) AS anio_tmdb
 FROM tmdb_raw;
--- @PASO
 -- 5. Seleccionar una sola sinopsis válida por película de MovieLens.
 -- Hay algunos tmdbId duplicados; se prioriza coincidencia IMDb, año y
 -- extensión de la sinopsis. IMDb incompatibles se excluyen.
@@ -116,7 +108,6 @@ WHERE t.sinopsis IS NOT NULL
         'nan', 'none'
   )
   AND (e.imdb_num IS NULL OR t.imdb_num IS NULL OR e.imdb_num = t.imdb_num);
--- @PASO
 -- 6. Dimensión maestra: todas las películas, aunque falte sinopsis.
 CREATE OR REPLACE TABLE peliculas AS
 SELECT
@@ -130,13 +121,11 @@ SELECT
 FROM ml_peliculas m
 LEFT JOIN ml_enlaces e ON m.movieId = e.movieId
 LEFT JOIN tmdb_coincidencias c ON m.movieId = c.movieId AND c.prioridad = 1;
--- @PASO
 -- 7. Subconjunto de Qdrant: únicamente películas con sinopsis aprovechable.
 CREATE OR REPLACE TABLE peliculas_qdrant AS
 SELECT movieId, titulo, anio, generos, tmdbId, imdbId, sinopsis
 FROM peliculas
 WHERE sinopsis IS NOT NULL;
--- @PASO
 -- 8. Datos para el futuro grafo NebulaGraph.
 CREATE OR REPLACE TABLE valoraciones AS
 SELECT
@@ -145,10 +134,8 @@ SELECT
     TRY_CAST(rating AS DOUBLE) AS puntuacion,
     TRY_CAST(timestamp AS BIGINT) AS timestamp
 FROM ml_ratings_raw;
--- @PASO
 CREATE OR REPLACE TABLE usuarios AS
 SELECT DISTINCT userId FROM valoraciones WHERE userId IS NOT NULL;
--- @PASO
 CREATE OR REPLACE TABLE peliculas_generos AS
 SELECT p.movieId, g.genero
 FROM peliculas p

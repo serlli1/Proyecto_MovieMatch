@@ -1,185 +1,171 @@
-#!/usr/bin/env python3
-"""Carga el catálogo normalizado de DuckDB en una nueva colección de Qdrant.
-
-Ejecución (desde la raíz de MovieMatch):
-    ./.venv/bin/python cargar_movielens.py
-
-No elimina ni modifica la colección anterior `peliculas`.
-Puedes volver a ejecutarlo: los puntos conservan su identificador movieId.
-"""
-
-from __future__ import annotations
-
+"""Carga por lotes el catálogo de DuckDB en Qdrant, conservando movieId."""
 import sys
+from contextlib import closing
 from pathlib import Path
 
 import duckdb
 from qdrant_client import models
 
-from src.motor import cliente, obtener_modelo, texto_de_pelicula
+from src.motor import COLECCION, DIMENSION, cliente, obtener_modelo, texto_de_pelicula
 
-RAIZ = Path(__file__).resolve().parent
-RUTA_DUCKDB = RAIZ / "datos" / "moviematch.duckdb"
-COLECCION_NUEVA = "peliculas_v2"
+RUTA_DUCKDB = Path(__file__).resolve().parent / "datos" / "moviematch.duckdb"
 TAM_LOTE = 64
 
 
-def preparar_coleccion(db, dimension: int) -> None:
-    """Crea una colección independiente e índices sobre campos filtrables."""
-    if not db.collection_exists(COLECCION_NUEVA):
+def preparar_coleccion(db):
+    indices = {
+        "generos": models.PayloadSchemaType.KEYWORD,
+        "anio": models.PayloadSchemaType.INTEGER,
+    }
+    esquema = {}
+    if db.collection_exists(COLECCION):
+        info = db.get_collection(COLECCION)
+        config = info.config.params.vectors
+        if (
+            not isinstance(config, models.VectorParams)
+            or config.size != DIMENSION
+            or config.distance != models.Distance.COSINE
+        ):
+            raise RuntimeError(
+                f"La colección '{COLECCION}' requiere vectores de {DIMENSION} "
+                "dimensiones y distancia coseno. No se ha modificado."
+            )
+        esquema = info.payload_schema or {}
+        for campo, tipo in indices.items():
+            if campo in esquema and esquema[campo].data_type != tipo:
+                raise RuntimeError(f"El índice '{campo}' debe ser de tipo {tipo.value}.")
+    else:
         db.create_collection(
-            collection_name=COLECCION_NUEVA,
+            collection_name=COLECCION,
             vectors_config=models.VectorParams(
-                size=dimension, distance=models.Distance.COSINE
+                size=DIMENSION, distance=models.Distance.COSINE
             ),
         )
-        print(f"✓ Creada colección nueva '{COLECCION_NUEVA}' ({dimension} dimensiones).")
-    else:
-        config = db.get_collection(COLECCION_NUEVA).config.params.vectors
-        if not isinstance(config, models.VectorParams) or config.size != dimension:
-            raise RuntimeError(
-                f"La colección '{COLECCION_NUEVA}' ya existe con otra configuración "
-                "vectorial. No se ha modificado."
-            )
-        print(f"✓ Colección '{COLECCION_NUEVA}' existente; se actualizará por movieId.")
 
-    # Crear los índices una sola vez; son los dos filtros empleados por app.py.
-    schema = db.get_collection(COLECCION_NUEVA).payload_schema or {}
-    for campo, tipo in (
-        ("generos", models.PayloadSchemaType.KEYWORD),
-        ("anio", models.PayloadSchemaType.INTEGER),
-    ):
-        if campo not in schema:
+    for campo, tipo in indices.items():
+        if campo not in esquema:
             db.create_payload_index(
-                collection_name=COLECCION_NUEVA,
+                collection_name=COLECCION,
                 field_name=campo,
                 field_schema=tipo,
                 wait=True,
             )
-            print(f"✓ Índice de payload creado: {campo} ({tipo.value}).")
 
 
-def limpiar_fila(fila: tuple) -> dict:
-    """Normaliza los valores de DuckDB para generar un payload JSON válido."""
+def limpiar_fila(fila):
     movie_id, titulo, anio, generos, tmdb_id, imdb_id, sinopsis = fila
     if movie_id is None or not isinstance(sinopsis, str) or not sinopsis.strip():
         raise ValueError(f"Película sin ID o sinopsis: {movie_id!r}")
+    if anio is not None:
+        anio = int(anio)
+    if generos is None:
+        generos = []
+    if tmdb_id is not None:
+        tmdb_id = int(tmdb_id)
+    if imdb_id is not None:
+        imdb_id = str(imdb_id)
 
     return {
         "movieId": int(movie_id),
         "titulo": str(titulo),
-        "anio": int(anio) if anio is not None else None,
-        "generos": list(generos) if generos is not None else [],
-        "tmdbId": int(tmdb_id) if tmdb_id is not None else None,
-        "imdbId": str(imdb_id) if imdb_id is not None else None,
+        "anio": anio,
+        "generos": list(generos),
+        "tmdbId": tmdb_id,
+        "imdbId": imdb_id,
         "sinopsis": sinopsis.strip(),
     }
 
 
-def main() -> None:
+def cargar_lotes(con, db, modelo):
+    cursor = con.execute("""
+        SELECT movieId, titulo, anio, generos, tmdbId, imdbId, sinopsis
+        FROM peliculas_qdrant ORDER BY movieId
+    """)
+    procesadas = 0
+    primera_id = None
+    while True:
+        filas = cursor.fetchmany(TAM_LOTE)
+        if not filas:
+            break
+
+        peliculas = []
+        textos = []
+        for fila in filas:
+            pelicula = limpiar_fila(fila)
+            peliculas.append(pelicula)
+            textos.append(texto_de_pelicula(pelicula))
+
+        vectores = modelo.encode(
+            textos,
+            batch_size=32,
+            normalize_embeddings=True,
+            show_progress_bar=False,
+        )
+        puntos = []
+        for pelicula, vector in zip(peliculas, vectores, strict=True):
+            punto = models.PointStruct(
+                id=pelicula["movieId"],
+                vector=vector.tolist(),
+                payload=pelicula,
+            )
+            puntos.append(punto)
+
+        db.upsert(collection_name=COLECCION, points=puntos, wait=True)
+        if primera_id is None:
+            primera_id = peliculas[0]["movieId"]
+        procesadas += len(puntos)
+    return procesadas, primera_id
+
+
+def main():
     if not RUTA_DUCKDB.is_file():
         raise FileNotFoundError(
             f"No existe {RUTA_DUCKDB}. Ejecuta primero scripts/03_etl_duckdb.py."
         )
-
-    con = duckdb.connect(str(RUTA_DUCKDB), read_only=True)
-    try:
-        esperado = int(con.execute("SELECT COUNT(*) FROM peliculas_qdrant").fetchone()[0])
+    with duckdb.connect(str(RUTA_DUCKDB), read_only=True) as con:
+        esperado, ids_unicos, validas = con.execute("""
+            SELECT count(*), count(DISTINCT movieId),
+                   count(*) FILTER (WHERE movieId >= 0 AND titulo IS NOT NULL
+                                    AND sinopsis IS NOT NULL AND trim(sinopsis) <> '')
+            FROM peliculas_qdrant
+        """).fetchone()
         if esperado < 100:
             raise RuntimeError(
-                f"La tabla 'peliculas_qdrant' solo tiene {esperado} filas. "
-                "Revisa el reporte del ETL antes de importar."
+                f"Solo hay {esperado} películas para Qdrant. Revisa el informe del ETL."
             )
+        if ids_unicos != esperado or validas != esperado:
+            raise RuntimeError("Catálogo con IDs duplicados, IDs inválidos o textos ausentes.")
 
-        print(f"Películas listas en DuckDB: {esperado}")
-        print("Cargando modelo de embeddings...")
         modelo = obtener_modelo()
-        dimension = modelo.get_sentence_embedding_dimension()
-        if not isinstance(dimension, int) or dimension <= 0:
-            raise RuntimeError("No se ha podido determinar la dimensión del modelo.")
-
-        db = cliente()
-        preparar_coleccion(db, dimension)
-
-        # Procesar en lotes: evita tener los 9.494 vectores en memoria a la vez.
-        cursor = con.execute(
-            """
-            SELECT movieId, titulo, anio, generos, tmdbId, imdbId, sinopsis
-            FROM peliculas_qdrant
-            ORDER BY movieId
-            """
-        )
-
-        procesadas = 0
-        primera_id = None
-        while True:
-            filas = cursor.fetchmany(TAM_LOTE)
-            if not filas:
-                break
-            peliculas = [limpiar_fila(fila) for fila in filas]
-            textos = [texto_de_pelicula(p) for p in peliculas]
-            vectores = modelo.encode(
-                textos,
-                batch_size=32,
-                normalize_embeddings=True,
-                show_progress_bar=False,
-            )
-            puntos = [
-                models.PointStruct(
-                    id=p["movieId"],
-                    vector=v.tolist(),
-                    payload=p,
+        if modelo.get_embedding_dimension() != DIMENSION:
+            raise RuntimeError(f"El modelo debe generar vectores de {DIMENSION} dimensiones.")
+        with closing(cliente()) as db:
+            preparar_coleccion(db)
+            procesadas, primera_id = cargar_lotes(con, db, modelo)
+            total = db.count(collection_name=COLECCION, exact=True).count
+            if procesadas != esperado or total != esperado:
+                raise RuntimeError(
+                    f"DuckDB: {esperado}; procesadas: {procesadas}; Qdrant: {total}. "
+                    "Revisa el catálogo; no se han borrado puntos sobrantes."
                 )
-                for p, v in zip(peliculas, vectores)
-            ]
-            db.upsert(
-                collection_name=COLECCION_NUEVA,
-                points=puntos,
-                wait=True,
+            muestra = db.retrieve(
+                collection_name=COLECCION,
+                ids=[primera_id],
+                with_payload=True,
+                with_vectors=False,
             )
-            if primera_id is None:
-                primera_id = peliculas[0]["movieId"]
-            procesadas += len(peliculas)
-            print(f"\rVectorizadas e insertadas: {procesadas}/{esperado}", end="", flush=True)
-
-        print()
-        if procesadas != esperado:
-            raise RuntimeError(f"Procesadas {procesadas} películas; DuckDB contenía {esperado}.")
-
-        # Qdrant puede conservar registros de una ejecución anterior de v2;
-        # una diferencia en el recuento indica que debe revisarse antes de activar la app.
-        total = db.count(collection_name=COLECCION_NUEVA, exact=True).count
-        if total != esperado:
-            raise RuntimeError(
-                f"Qdrant contiene {total} puntos, mientras que DuckDB tiene {esperado}. "
-                "Revisa la colección antes de cambiar el buscador."
-            )
-        muestra = db.retrieve(
-            collection_name=COLECCION_NUEVA,
-            ids=[primera_id],
-            with_payload=True,
-            with_vectors=False,
-        )
-        if len(muestra) != 1 or int(muestra[0].payload.get("movieId", -1)) != primera_id:
-            raise RuntimeError("No coincide el identificador del punto con el movieId.")
-
-        print("\n=== QDRANT | CATÁLOGO MOVIELENS ===")
-        print(f"Colección nueva:          {COLECCION_NUEVA}")
-        print(f"Películas en DuckDB:      {esperado}")
-        print(f"Puntos en Qdrant:         {total}")
-        print(f"Dimensión de embeddings:  {dimension}")
-        print("Índices:                  generos (keyword), anio (integer)")
-        print("Identificador:            Point ID = movieId")
-        print("Estado:                   OK")
-        print("\nLa colección anterior 'peliculas' sigue intacta.")
-        print("Tras verificar la carga, cambia COLECCION a 'peliculas_v2' en src/motor.py.")
-    finally:
-        con.close()
+            if len(muestra) != 1:
+                raise RuntimeError("No se ha encontrado la película de comprobación.")
+            punto = muestra[0]
+            pelicula = punto.payload or {}
+            if punto.id != primera_id or pelicula.get("movieId") != primera_id:
+                raise RuntimeError("No coincide el identificador del punto con el movieId.")
+    print(f"Carga completada: {total} películas en '{COLECCION}'.")
 
 
 if __name__ == "__main__":
     try:
         main()
-    except (FileNotFoundError, RuntimeError, ValueError, duckdb.Error) as exc:
-        print(f"\nERROR: {exc}", file=sys.stderr)
+    except (OSError, RuntimeError, ValueError, duckdb.Error) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)

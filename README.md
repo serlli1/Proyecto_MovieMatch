@@ -1,111 +1,99 @@
-# MovieMatch — búsqueda semántica de películas con Qdrant
+# MovieMatch
 
-Proyecto educativo para la asignatura **Agregación y Presentación de Datos en IoT**.
+Buscador semántico para **Agregación y Presentación de Datos en IoT**. DuckDB integra
+los CSV de MovieLens y TMDB mediante SQL. Qdrant almacena las sinopsis vectorizadas
+y permite buscar por significado, con filtros de género y año. Streamlit ofrece
+la interfaz y `buscar.py` permite consultar desde la terminal.
 
-## Objetivo
+El catálogo local contiene 9.742 películas, 610 usuarios y 100.836 valoraciones;
+9.494 películas tienen sinopsis válida para Qdrant. Las demás permanecen en DuckDB.
+`movieId` es la clave principal y el Point ID de Qdrant; `tmdbId` e `imdbId` son
+identificadores externos. IMDb se conserva como texto, incluidos sus ceros.
 
-Comparar una búsqueda basada en coincidencia de palabras con una búsqueda semántica que emplea **Sentence Transformers** y **Qdrant**. La base de datos almacena vectores de 384 dimensiones y metadatos de películas. No hace falta utilizar servicios de pago ni modelos de lenguaje generativos.
+## Preparación
 
-**Este repositorio es un prototipo inicial**, no la entrega final de la asignatura. Incluye 38 películas con sinopsis breves escritas específicamente para la demostración. Para un proyecto final conviene aumentar el catálogo y medir la calidad de las búsquedas.
-
-## Requisitos
-
-- Docker Desktop funcionando.
-- Python 3.10 o superior (recomendado Python 3.11 o 3.12).
-- Conexión a Internet la primera vez para descargar la imagen de Qdrant y el modelo de embeddings.
-
-## 1. Levantar la base de datos
-
-Desde la carpeta del proyecto:
+Usa Python 3.11 (entorno comprobado), Docker Desktop y una conexión para las descargas
+iniciales. Ejecuta los comandos desde la raíz del proyecto:
 
 ```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
 docker compose up -d
 ```
 
-Abre el panel de Qdrant: http://localhost:6333/dashboard
+Si `.venv` ya existe, basta con activarlo. Las cuatro dependencias directas están
+fijadas a las versiones comprobadas; las dependencias transitivas no están fijadas.
+Qdrant conserva los datos en el volumen `qdrant_data` y solo publica el puerto local.
+Panel: [Qdrant](http://localhost:6333/dashboard). Puedes detenerlo sin borrar datos
+con `docker compose stop` y arrancarlo con `docker compose start`.
 
-La API responde en http://localhost:6333 . Los datos de Qdrant se conservan en un volumen Docker, incluso si se detiene el contenedor.
+## Fuentes y ETL
 
-## 2. Crear un entorno Python
+Descarga [MovieLens Latest Small de GroupLens](https://grouplens.org/datasets/movielens/latest/)
+y descomprime `ml-latest-small.zip` dentro de `datos/fuentes/`. Deben existir:
 
-En macOS o Linux:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+```text
+datos/fuentes/ml-latest-small/movies.csv
+datos/fuentes/ml-latest-small/links.csv
+datos/fuentes/ml-latest-small/ratings.csv
 ```
 
-La primera importación del modelo puede descargar varios cientos de MB. Conviene hacerla **antes de la práctica en clase**.
-
-## 3. Crear y poblar la colección
-
-```bash
-python cargar.py
-```
-
-El programa genera un embedding por película y lo almacena junto a su título, año, géneros y sinopsis. Si la colección ya existe, actualiza los IDs del catálogo original sin borrar las películas añadidas manualmente.
-
-## 4. Hacer búsquedas semánticas
+El ETL descarga `movies_metadata.csv` del [depósito de Zenodo](https://zenodo.org/records/18099452)
+si falta en `datos/fuentes/`, y comprueba el MD5 de la descarga. También puedes aportar
+un CSV ya descargado mediante `--metadata /ruta/movies_metadata.csv`.
 
 ```bash
-python buscar.py "una persona descubre que vive en una simulación"
-python buscar.py "un viaje en el tiempo que cambia el pasado" --genero "Ciencia ficción"
-python buscar.py "aventuras en el espacio" --desde 2010 --hasta 2020
+python scripts/03_etl_duckdb.py
 ```
 
-El resultado muestra títulos, sinopsis y una **puntuación de similitud**. No debe interpretarse como probabilidad de acierto.
+Este comando reconstruye las tablas de `datos/moviematch.duckdb` dentro de una
+transacción y actualiza las exportaciones y `datos/reporte_etl.json`. No hace falta
+repetirlo para buscar si ya dispones del catálogo preparado. El JOIN utiliza
+`tmdbId`, descarta IMDb incompatibles y resuelve coincidencias duplicadas priorizando
+IMDb, año y sinopsis. Conserva controles de claves, valoraciones y relaciones;
+las filas de TMDB con errores de lectura se omiten.
 
-## 5. Comparar búsquedas
+En `datos/procesados/` genera `peliculas_qdrant.parquet` y cuatro CSV para el futuro
+grafo: `peliculas_nebula.csv`, `usuarios_nebula.csv`, `valoraciones_nebula.csv` y
+`peliculas_generos_nebula.csv`. NebulaGraph no está implementado ni es necesario.
+Las consultas académicas están en `scripts/sql/consultas_ejemplo.sql`.
+
+## Carga y búsqueda
+
+Para preparar Qdrant por primera vez o actualizarlo deliberadamente:
 
 ```bash
-python comparar.py "un hombre atrapado en una realidad falsa"
+python cargar_movielens.py
 ```
 
-La comparación de palabras de `comparar.py` es deliberadamente básica, para ilustrar el concepto: **no** es una implementación de BM25 ni de un motor de texto completo.
+La carga lee DuckDB, genera vectores por lotes y crea `peliculas_v2` solo si no
+existe. Si existe, comprueba sus 384 dimensiones y distancia coseno, y actualiza
+puntos por `movieId`. Mantiene índices sobre `generos` y `anio`; nunca elimina ni
+recrea colecciones y avisa si el recuento final no coincide. Una interrupción puede
+dejar una carga parcial: repetirla actualiza los mismos IDs. Si ya está cargada,
+no necesitas ejecutar este paso para iniciar la aplicación.
 
-## 6. Insertar una película propia
+Carga y consultas comparten `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`.
+El modelo se descarga la primera vez que se utiliza. Las sinopsis son principalmente
+inglesas; el modelo admite consultas en español. La similitud no es una probabilidad.
 
 ```bash
-python agregar.py \
-  --titulo "Viaje imposible" \
-  --anio 2026 \
-  --generos "Ciencia ficción,Aventura" \
-  --sinopsis "Una exploradora cruza un portal temporal y busca la manera de regresar a su época."
+python -m streamlit run app.py
+python buscar.py "aventuras en el espacio" --genero "Ciencia ficción"
+python buscar.py "un viaje en el tiempo" --desde 1990 --hasta 2020 --limite 5
 ```
 
-## Parar / reiniciar
+Streamlit guarda géneros y años en caché durante cinco minutos, sin descargar
+sinopsis para construir los filtros. El intervalo completo incluye películas sin
+año; al acotarlo se excluyen. En terminal, omitir `--desde` y `--hasta` incluye todos
+los años. `QDRANT_URL` permite cambiar la dirección, por defecto `http://localhost:6333`.
 
-```bash
-docker compose stop
-docker compose start
-docker compose down
-```
+## Archivos
 
-Para borrar el volumen y **eliminar todas las películas almacenadas**:
+- `app.py`, `buscar.py`: interfaz y terminal.
+- `src/motor.py`: modelo, consultas y metadatos de Qdrant.
+- `cargar_movielens.py`: carga de DuckDB a Qdrant.
+- `scripts/03_etl_duckdb.py`, `scripts/sql/`: integración y consultas SQL.
 
-```bash
-docker compose down -v
-```
-
-## Organización
-
-- `docker-compose.yml`: servidor Qdrant.
-- `datos/peliculas.json`: catálogo de ejemplo en español.
-- `src/motor.py`: funciones reutilizables; una futura interfaz Streamlit puede invocarlas directamente.
-- `cargar.py`: crea y carga la colección.
-- `buscar.py`: búsqueda y filtros.
-- `agregar.py`: nueva película introducida por el usuario.
-- `comparar.py`: baseline léxica para la comparación.
-- `practica_borrador.md`: actividad prevista de 20 minutos.
-
-## Notas técnicas y limitaciones
-
-- Modelo: `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (384 dimensiones).
-- Métrica: distancia coseno.
-- El mismo modelo se utiliza para insertar y consultar.
-- Todos los componentes funcionan localmente después de las descargas iniciales.
-- El modelo puede equivocarse; para evaluar la relevancia habrá que crear un conjunto de consultas con resultados esperados y probar con un catálogo más grande.
-- El servidor solo se publica en `127.0.0.1` y no tiene autenticación: **no se debe exponer directamente a Internet**.
-- La imagen de Qdrant está fijada a la versión `v1.19.2` para facilitar la reproducibilidad. Al cerrar el proyecto hay que fijar también versiones de dependencias Python.
+Los datasets y las bases locales están excluidos de Git.
