@@ -12,7 +12,7 @@ from datetime import datetime
 import streamlit as st
 
 from src.interfaz import obtener_catalogo
-from src.motor import COLECCION, URL_QDRANT, buscar_semanticamente, cliente
+from src.motor import COLECCION, buscar_semanticamente, cliente
 
 st.set_page_config(
     page_title="MovieMatch · Descubre tu película",
@@ -86,11 +86,7 @@ minimo, maximo = (min(anios), max(anios)) if anios else (1900, datetime.now().ye
 with st.sidebar:
     st.title("⚙️ Panel de búsqueda")
     st.success("● Qdrant conectado")
-    col_a, col_b = st.columns(2)
-    col_a.metric("Películas", total)
-    col_b.metric("Dimensiones", "384")
-    st.caption(f"Colección: `{COLECCION}` · Qdrant: `{URL_QDRANT}`")
-    st.divider()
+    st.metric("Películas", total)
     st.subheader("Filtros")
     genero_elegido = st.selectbox("Género", ["Todos"] + generos_catalogo)
     if minimo < maximo:
