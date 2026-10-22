@@ -1,6 +1,31 @@
+# Entornos virtuales
 .venv/
+venv/
+env/
+
+# Python
 __pycache__/
 *.pyc
+.pytest_cache/
+
+# macOS
 .DS_Store
+
+# Configuración local y secretos
 .env
+.env.*
+.streamlit/secrets.toml
+
+# Almacenamiento local de bases de datos
 qdrant_storage/
+qdrant_data/
+nebula_data/
+
+# Archivos temporales y versiones antiguas
+*.zip
+app_anterior.py
+MovieMatch_actualizacion_Streamlit/
+
+# Editores
+.vscode/
+.idea/
