@@ -10,7 +10,11 @@ colaborativas. Streamlit presenta los resultados en dos pestañas:
   recomendaciones colaborativas y barras de géneros favoritos.
 
 El catálogo local contiene 9.742 películas, 610 usuarios y 100.836 valoraciones;
-9.494 películas tienen sinopsis válida para Qdrant. Las demás permanecen en DuckDB.
+Qdrant conserva las 9.494 películas con sinopsis válida, tengan o no valoraciones.
+NebulaGraph conserva 9.476 películas con sinopsis válida **y al menos una valoración**,
+los 610 usuarios, 100.244 valoraciones y 21.504 relaciones película–género (19 géneros).
+Las tablas maestras de DuckDB siguen completas: 9.742 películas, 100.836 valoraciones
+y 22.050 relaciones película–género. Todos los usuarios conservan historial válido.
 `movieId` es la clave principal y el Point ID de Qdrant; `tmdbId` e `imdbId` son
 identificadores externos. IMDb se conserva como texto, incluidos sus ceros.
 
@@ -58,9 +62,20 @@ repetirlo para buscar si ya dispones del catálogo preparado. El JOIN utiliza
 IMDb, año y sinopsis. Conserva controles de claves, valoraciones y relaciones;
 las filas de TMDB con errores de lectura se omiten.
 
-En `datos/procesados/` genera `peliculas_qdrant.parquet` y cuatro CSV para el futuro
+En `datos/procesados/` genera `peliculas_qdrant.parquet` y cuatro CSV para el
 grafo: `peliculas_nebula.csv`, `usuarios_nebula.csv`, `valoraciones_nebula.csv` y
 `peliculas_generos_nebula.csv`. El importador del grafo utiliza estos cuatro CSV.
+La selección del grafo parte de `peliculas_qdrant` y exige que exista una valoración.
+Las valoraciones y relaciones con géneros se filtran por ese mismo conjunto; no se
+aplican filtros adicionales por año, género o identificadores externos.
+
+Para actualizar solo las exportaciones y el informe, sin reconstruir tablas ni
+volver a descargar fuentes, abre DuckDB en modo de lectura:
+
+```bash
+python scripts/preparar_datos.py --solo-exportar
+```
+
 Las consultas académicas están en `scripts/sql/consultas_ejemplo.sql`.
 
 ## Carga y búsqueda
@@ -119,8 +134,35 @@ No hace falta repetir el ETL ni la carga de Qdrant. Si faltan los CSV, ejecuta a
 El importador crea el espacio `moviematch`, sin borrar otros espacios. Comprueba
 los CSV antes de escribir y contrasta los datos importados, no solo sus cantidades.
 Puede repetirse: los mismos IDs y parejas de relaciones se actualizan sin duplicarse.
-No elimina registros sobrantes; si los CSV cambian y sobran registros, la validación
-lo comunica. Una carga interrumpida puede retomarse ejecutándolo otra vez.
+La carga normal no elimina registros sobrantes; la validación los detecta.
+Para aplicar el filtro al grafo existente:
+
+```bash
+python scripts/preparar_datos.py --solo-exportar
+python cargar_nebula.py --depurar
+```
+
+`--depurar` guarda una copia de los datos actuales en `datos/respaldos_nebula/FECHA/`,
+la relee y contrasta antes de borrar. Solo elimina las películas ausentes de los CSV
+actuales, junto con sus relaciones entrantes y salientes. No elimina espacios ni
+usuarios. La lista exacta queda en `descartadas.json` dentro del respaldo.
+La validación final compara registros y estadísticas de almacenamiento para detectar
+relaciones huérfanas. No ejecutes otras escrituras al grafo durante la depuración.
+
+La migración descartó 248 películas sin sinopsis válida y 18 con sinopsis pero sin
+valoraciones: 266 películas, 592 valoraciones y 546 relaciones con géneros en total.
+No había películas sin sinopsis y sin valoraciones simultáneamente.
+
+Para recuperar el estado anterior a esta depuración, sin borrar el espacio:
+
+```bash
+python cargar_nebula.py --fuentes datos/respaldos_nebula/FECHA
+```
+
+Sustituye `FECHA` por el directorio del respaldo. Esta recuperación repone los registros
+eliminados y valida el resultado; no elimina posibles registros añadidos después.
+Una operación interrumpida puede recuperarse desde el respaldo antes de repetirla.
+Después de cambiar los datos, reinicia Streamlit o espera sus cinco minutos de caché.
 
 El esquema es:
 
@@ -130,7 +172,7 @@ Pelicula --PERTENECE_A--> Genero(nombre)
 ```
 
 Los IDs usan los prefijos `usuario:`, `pelicula:` y `genero:`. Las películas sin
-sinopsis también están en el grafo. El `movieId` coincide con el Point ID de Qdrant.
+sinopsis válida permanecen únicamente en el catálogo maestro de DuckDB. El `movieId` coincide con el Point ID de Qdrant.
 El puerto `9669` se publica solo en localhost; el despliegue local utiliza
 `root` / `nebula`. El cliente admite `NEBULA_HOST`, `NEBULA_PORT`, `NEBULA_USER` y
 `NEBULA_PASSWORD` mediante variables de entorno. Cambiar la variable de contraseña

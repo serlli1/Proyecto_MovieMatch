@@ -30,3 +30,6 @@ datos/reporte_*.json
 # Copias antiguas locales
 app_anterior.py
 MovieMatch_actualizacion_Streamlit/
+
+# Copias de recuperación del grafo
+datos/respaldos_nebula/

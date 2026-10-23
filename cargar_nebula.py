@@ -1,5 +1,7 @@
-"""Importa los CSV preparados por DuckDB sin borrar datos del grafo."""
+"""Importa los CSV preparados por DuckDB con depuración opcional y respaldo previo."""
+import argparse
 import csv
+from datetime import datetime
 import json
 import sys
 import time
@@ -11,10 +13,22 @@ DATOS = Path(__file__).resolve().parent / "datos" / "procesados"
 TAM_LOTE = 500
 
 
-def leer_fuentes():
+CONSULTAS = {
+    "peliculas": """MATCH (p:Pelicula) RETURN p.Pelicula.movieId AS movieId,
+        p.Pelicula.titulo AS titulo, p.Pelicula.anio AS anio""",
+    "usuarios": "MATCH (u:Usuario) RETURN u.Usuario.userId AS userId",
+    "valoraciones": """MATCH (u:Usuario)-[v:VALORA]->(p:Pelicula)
+        RETURN u.Usuario.userId AS userId, p.Pelicula.movieId AS movieId,
+               v.puntuacion AS puntuacion, v.fecha AS `timestamp`""",
+    "peliculas_generos": """MATCH (p:Pelicula)-[:PERTENECE_A]->(g:Genero)
+        RETURN p.Pelicula.movieId AS movieId, g.Genero.nombre AS genero""",
+}
+
+
+def leer_fuentes(carpeta=DATOS):
     tablas = {}
     for nombre in ("peliculas", "usuarios", "valoraciones", "peliculas_generos"):
-        ruta = DATOS / f"{nombre}_nebula.csv"
+        ruta = carpeta / f"{nombre}_nebula.csv"
         with ruta.open(encoding="utf-8", newline="") as archivo:
             tablas[nombre] = list(csv.DictReader(archivo))
         if not tablas[nombre]:
@@ -36,6 +50,7 @@ def leer_fuentes():
         usuarios.add(identificador)
 
     relaciones = set()
+    con_historial = set()
     for fila in tablas["valoraciones"]:
         usuario = int(fila["userId"])
         pelicula = int(fila["movieId"])
@@ -48,6 +63,10 @@ def leer_fuentes():
         if (usuario, pelicula) in relaciones:
             raise ValueError("Valoración duplicada.")
         relaciones.add((usuario, pelicula))
+        con_historial.add(usuario)
+
+    if con_historial != usuarios:
+        raise ValueError("Hay usuarios sin historial válido en los CSV.")
 
     relaciones = set()
     for fila in tablas["peliculas_generos"]:
@@ -144,17 +163,7 @@ def importar(sesion, tablas):
 
 
 def validar_importacion(sesion, tablas):
-    consultas = {
-        "peliculas": """MATCH (p:Pelicula) RETURN p.Pelicula.movieId AS movieId,
-            p.Pelicula.titulo AS titulo, p.Pelicula.anio AS anio""",
-        "usuarios": "MATCH (u:Usuario) RETURN u.Usuario.userId AS userId",
-        "valoraciones": """MATCH (u:Usuario)-[v:VALORA]->(p:Pelicula)
-            RETURN u.Usuario.userId AS userId, p.Pelicula.movieId AS movieId,
-                   v.puntuacion AS puntuacion, v.fecha AS `timestamp`""",
-        "peliculas_generos": """MATCH (p:Pelicula)-[:PERTENECE_A]->(g:Genero)
-            RETURN p.Pelicula.movieId AS movieId, g.Genero.nombre AS genero""",
-    }
-    for nombre, consulta in consultas.items():
+    for nombre, consulta in CONSULTAS.items():
         filas = ejecutar(sesion, consulta)
         columnas = list(filas[0]) if filas else []
         esperadas = set()
@@ -195,11 +204,80 @@ def validar_importacion(sesion, tablas):
     if nombres != generos_esperados or len(generos) != len(nombres):
         raise RuntimeError("Los géneros del grafo no coinciden con los CSV.")
 
+    # MATCH no muestra aristas huérfanas; contrasta también el recuento de almacenamiento.
+    trabajo = ejecutar(sesion, "SUBMIT JOB STATS")[0]["New Job Id"]
+    for intento in range(60):
+        estado = ejecutar(sesion, f"SHOW JOB {trabajo}")[0]["Status"]
+        if estado == "FINISHED":
+            break
+        if estado == "FAILED" or intento == 59:
+            raise RuntimeError("No se pudieron verificar las estadísticas del grafo.")
+        time.sleep(1)
+    esperados = {
+        "Usuario": len(tablas["usuarios"]), "Pelicula": len(tablas["peliculas"]),
+        "Genero": len(nombres), "VALORA": len(tablas["valoraciones"]),
+        "PERTENECE_A": len(tablas["peliculas_generos"]),
+        "vertices": len(tablas["usuarios"]) + len(tablas["peliculas"]) + len(nombres),
+        "edges": len(tablas["valoraciones"]) + len(tablas["peliculas_generos"]),
+    }
+    actuales = {}
+    for fila in ejecutar(sesion, "SHOW STATS"):
+        actuales[fila["Name"]] = fila["Count"]
+    if actuales != esperados:
+        raise RuntimeError("El grafo contiene registros sobrantes o relaciones huérfanas.")
+
+
+def depurar(sesion, tablas):
+    permitidas = set()
+    for pelicula in tablas["peliculas"]:
+        permitidas.add(int(pelicula["movieId"]))
+    actuales = ejecutar(sesion, CONSULTAS["peliculas"])
+    descartadas = []
+    for pelicula in actuales:
+        if pelicula["movieId"] not in permitidas:
+            descartadas.append(pelicula)
+    if not descartadas:
+        return
+
+    carpeta = DATOS.parent / "respaldos_nebula" / datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    carpeta.mkdir(parents=True, exist_ok=False)
+    for nombre, consulta in CONSULTAS.items():
+        filas = ejecutar(sesion, consulta)
+        if not filas:
+            raise RuntimeError("No se puede respaldar una tabla vacía del grafo.")
+        with (carpeta / f"{nombre}_nebula.csv").open("w", encoding="utf-8", newline="") as archivo:
+            escritor = csv.DictWriter(archivo, fieldnames=list(filas[0]))
+            escritor.writeheader()
+            escritor.writerows(filas)
+    # Relee y contrasta la copia antes de permitir cualquier eliminación.
+    respaldo = leer_fuentes(carpeta)
+    validar_importacion(sesion, respaldo)
+    (carpeta / "descartadas.json").write_text(
+        json.dumps(descartadas, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    print(f"Respaldo verificado: {carpeta}", flush=True)
+    for inicio in range(0, len(descartadas), TAM_LOTE):
+        ids = []
+        for pelicula in descartadas[inicio:inicio + TAM_LOTE]:
+            ids.append(f'"pelicula:{int(pelicula["movieId"])}"')
+        ejecutar(sesion, "DELETE VERTEX " + ", ".join(ids) + " WITH EDGE")
+    print(f"Descartadas {len(descartadas)} películas y sus relaciones.")
+
 
 def main():
-    tablas = leer_fuentes()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--depurar", action="store_true",
+                        help="Respalda y elimina las películas ausentes de los CSV actuales")
+    parser.add_argument("--fuentes", type=Path, default=DATOS,
+                        help="Carpeta de CSV; permite recuperar un respaldo sin borrar registros")
+    args = parser.parse_args()
+    if args.depurar and args.fuentes.resolve() != DATOS.resolve():
+        parser.error("La depuración solo admite las exportaciones actuales del ETL.")
+    tablas = leer_fuentes(args.fuentes)
     with conectar(usar_espacio=False) as sesion:
         preparar_grafo(sesion)
+        if args.depurar:
+            depurar(sesion, tablas)
         importar(sesion, tablas)
         validar_importacion(sesion, tablas)
     print(

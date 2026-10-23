@@ -158,6 +158,20 @@ def validar(con: duckdb.DuckDBPyConnection) -> dict:
 
 
 def exportar(con: duckdb.DuckDBPyConnection) -> dict[str, str]:
+    # Reutiliza exactamente el conjunto con sinopsis válida de Qdrant.
+    con.execute("""
+        CREATE OR REPLACE TEMP VIEW peliculas_nebula AS
+        SELECT p.* FROM peliculas_qdrant p
+        WHERE EXISTS (SELECT 1 FROM valoraciones v WHERE v.movieId = p.movieId)
+    """)
+    sin_historial = contar(con, """
+        SELECT count(*) FROM usuarios u WHERE NOT EXISTS (
+            SELECT 1 FROM valoraciones v JOIN peliculas_nebula p USING (movieId)
+            WHERE v.userId = u.userId
+        )
+    """)
+    if sin_historial:
+        raise RuntimeError(f"El filtro dejaría {sin_historial} usuarios sin historial.")
     EXPORTACIONES.mkdir(parents=True, exist_ok=True)
     consultas = {
         "qdrant": """
@@ -166,15 +180,18 @@ def exportar(con: duckdb.DuckDBPyConnection) -> dict[str, str]:
         """,
         "peliculas_nebula": """
             SELECT movieId, titulo, anio, tmdbId, imdbId
-            FROM peliculas ORDER BY movieId
+            FROM peliculas_nebula ORDER BY movieId
         """,
         "usuarios_nebula": "SELECT userId FROM usuarios ORDER BY userId",
         "valoraciones_nebula": """
             SELECT userId, movieId, puntuacion, timestamp
-            FROM valoraciones ORDER BY userId, movieId
+            FROM valoraciones WHERE movieId IN (SELECT movieId FROM peliculas_nebula)
+            ORDER BY userId, movieId
         """,
         "generos_nebula": """
-            SELECT movieId, genero FROM peliculas_generos ORDER BY movieId, genero
+            SELECT movieId, genero FROM peliculas_generos
+            WHERE movieId IN (SELECT movieId FROM peliculas_nebula)
+            ORDER BY movieId, genero
         """,
     }
     nombres_archivos = {
@@ -222,6 +239,7 @@ def resumen(con: duckdb.DuckDBPyConnection, comprobaciones: dict, rutas: dict) -
         "usuarios": contar(con, "SELECT count(*) FROM usuarios"),
         "valoraciones": contar(con, "SELECT count(*) FROM valoraciones"),
         "peliculas_para_qdrant": con_sinopsis,
+        "peliculas_para_nebula": contar(con, "SELECT count(*) FROM peliculas_nebula"),
         "cobertura_qdrant_pct": cobertura,
         "peliculas_sin_tmdbId": sin_tmdb,
         "peliculas_con_tmdbId_pero_sin_sinopsis_usable": sin_match,
@@ -231,7 +249,7 @@ def resumen(con: duckdb.DuckDBPyConnection, comprobaciones: dict, rutas: dict) -
         "observaciones": [
             "La colección existente de Qdrant no se modifica.",
             "Las sinopsis son mayoritariamente inglesas.",
-            "Las películas sin sinopsis permanecen en DuckDB y se exportan para NebulaGraph.",
+            "NebulaGraph recibe solo películas de peliculas_qdrant con al menos una valoración.",
             "Se ignoran las filas estructuralmente defectuosas del CSV de TMDB.",
         ],
     }
@@ -247,7 +265,18 @@ def main() -> None:
         "--metadata", type=Path,
         help="CSV de metadatos TMDB existente en otra ubicación",
     )
+    parser.add_argument(
+        "--solo-exportar", action="store_true",
+        help="Regenera las exportaciones desde DuckDB en modo de solo lectura",
+    )
     args = parser.parse_args()
+    if args.solo_exportar:
+        with duckdb.connect(str(RUTA_DUCKDB), read_only=True) as con:
+            integridad = validar(con)
+            archivos = exportar(con)
+            reporte = resumen(con, integridad, archivos)
+        print(f"Exportaciones preparadas: {reporte['peliculas_para_nebula']} películas para NebulaGraph.")
+        return
     if args.metadata is None:
         metadatos = TMDB
         descargar_tmdb(metadatos)
