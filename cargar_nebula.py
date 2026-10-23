@@ -1,0 +1,216 @@
+"""Importa los CSV preparados por DuckDB sin borrar datos del grafo."""
+import csv
+import json
+import sys
+import time
+from pathlib import Path
+
+from src.grafo import ESPACIO, conectar, ejecutar
+
+DATOS = Path(__file__).resolve().parent / "datos" / "procesados"
+TAM_LOTE = 500
+
+
+def leer_fuentes():
+    tablas = {}
+    for nombre in ("peliculas", "usuarios", "valoraciones", "peliculas_generos"):
+        ruta = DATOS / f"{nombre}_nebula.csv"
+        with ruta.open(encoding="utf-8", newline="") as archivo:
+            tablas[nombre] = list(csv.DictReader(archivo))
+        if not tablas[nombre]:
+            raise ValueError(f"El archivo {ruta.name} está vacío.")
+
+    peliculas = set()
+    usuarios = set()
+    for fila in tablas["peliculas"]:
+        identificador = int(fila["movieId"])
+        if identificador <= 0 or identificador in peliculas or not fila["titulo"]:
+            raise ValueError("Película inválida o duplicada en los CSV.")
+        peliculas.add(identificador)
+        if fila["anio"]:
+            int(fila["anio"])
+    for fila in tablas["usuarios"]:
+        identificador = int(fila["userId"])
+        if identificador <= 0 or identificador in usuarios:
+            raise ValueError("Usuario inválido o duplicado en los CSV.")
+        usuarios.add(identificador)
+
+    relaciones = set()
+    for fila in tablas["valoraciones"]:
+        usuario = int(fila["userId"])
+        pelicula = int(fila["movieId"])
+        puntuacion = float(fila["puntuacion"])
+        int(fila["timestamp"])
+        if usuario not in usuarios or pelicula not in peliculas:
+            raise ValueError("Valoración sin usuario o película correspondiente.")
+        if not 0.5 <= puntuacion <= 5 or puntuacion * 2 % 1 != 0:
+            raise ValueError("Valoración fuera de escala.")
+        if (usuario, pelicula) in relaciones:
+            raise ValueError("Valoración duplicada.")
+        relaciones.add((usuario, pelicula))
+
+    relaciones = set()
+    for fila in tablas["peliculas_generos"]:
+        relacion = (int(fila["movieId"]), fila["genero"])
+        if relacion[0] not in peliculas or not relacion[1] or relacion in relaciones:
+            raise ValueError("Relación de género inválida o duplicada.")
+        relaciones.add(relacion)
+    return tablas
+
+
+def esperar(sesion, consulta):
+    # Los cambios de esquema se propagan mediante los heartbeats de NebulaGraph.
+    for intento in range(60):
+        try:
+            return ejecutar(sesion, consulta)
+        except RuntimeError:
+            if intento == 59:
+                raise
+            time.sleep(1)
+
+
+def preparar_grafo(sesion):
+    hosts = ejecutar(sesion, "SHOW HOSTS")
+    if not any(fila.get("Host") == "storaged" for fila in hosts):
+        ejecutar(sesion, 'ADD HOSTS "storaged":9779')
+    esperar(sesion, f"""
+        CREATE SPACE IF NOT EXISTS {ESPACIO}
+        (partition_num=10, replica_factor=1, vid_type=FIXED_STRING(80))
+    """)
+    esperar(sesion, f"USE {ESPACIO}")
+    esquemas = [
+        "CREATE TAG IF NOT EXISTS Usuario(userId int)",
+        "CREATE TAG IF NOT EXISTS Pelicula(movieId int, titulo string, anio int NULL)",
+        "CREATE TAG IF NOT EXISTS Genero(nombre string)",
+        "CREATE EDGE IF NOT EXISTS VALORA(puntuacion double, fecha int)",
+        "CREATE EDGE IF NOT EXISTS PERTENECE_A()",
+    ]
+    for esquema in esquemas:
+        ejecutar(sesion, esquema)
+    for etiqueta in ("Usuario", "Pelicula", "Genero"):
+        esperar(sesion, f"DESCRIBE TAG {etiqueta}")
+    for relacion in ("VALORA", "PERTENECE_A"):
+        esperar(sesion, f"DESCRIBE EDGE {relacion}")
+
+
+def insertar_lotes(sesion, sentencia, valores):
+    for inicio in range(0, len(valores), TAM_LOTE):
+        lote = valores[inicio:inicio + TAM_LOTE]
+        esperar(sesion, sentencia + " VALUES " + ", ".join(lote))
+
+
+def importar(sesion, tablas):
+    valores = []
+    for fila in tablas["peliculas"]:
+        movie_id = int(fila["movieId"])
+        titulo = json.dumps(fila["titulo"], ensure_ascii=False)
+        anio = "NULL"
+        if fila["anio"]:
+            anio = str(int(fila["anio"]))
+        valores.append(f'"pelicula:{movie_id}":({movie_id}, {titulo}, {anio})')
+    insertar_lotes(sesion, "INSERT VERTEX Pelicula(movieId, titulo, anio)", valores)
+
+    valores = []
+    for fila in tablas["usuarios"]:
+        user_id = int(fila["userId"])
+        valores.append(f'"usuario:{user_id}":({user_id})')
+    insertar_lotes(sesion, "INSERT VERTEX Usuario(userId)", valores)
+
+    generos = set()
+    for fila in tablas["peliculas_generos"]:
+        generos.add(fila["genero"])
+    valores = []
+    for genero in sorted(generos):
+        identificador = json.dumps("genero:" + genero, ensure_ascii=False)
+        nombre = json.dumps(genero, ensure_ascii=False)
+        valores.append(f"{identificador}:({nombre})")
+    insertar_lotes(sesion, "INSERT VERTEX Genero(nombre)", valores)
+
+    valores = []
+    for fila in tablas["valoraciones"]:
+        usuario = int(fila["userId"])
+        pelicula = int(fila["movieId"])
+        nota = float(fila["puntuacion"])
+        fecha = int(fila["timestamp"])
+        valores.append(f'"usuario:{usuario}"->"pelicula:{pelicula}":({nota}, {fecha})')
+    insertar_lotes(sesion, "INSERT EDGE VALORA(puntuacion, fecha)", valores)
+
+    valores = []
+    for fila in tablas["peliculas_generos"]:
+        pelicula = int(fila["movieId"])
+        genero = json.dumps("genero:" + fila["genero"], ensure_ascii=False)
+        valores.append(f'"pelicula:{pelicula}"->{genero}:()')
+    insertar_lotes(sesion, "INSERT EDGE PERTENECE_A()", valores)
+
+
+def validar_importacion(sesion, tablas):
+    consultas = {
+        "peliculas": """MATCH (p:Pelicula) RETURN p.Pelicula.movieId AS movieId,
+            p.Pelicula.titulo AS titulo, p.Pelicula.anio AS anio""",
+        "usuarios": "MATCH (u:Usuario) RETURN u.Usuario.userId AS userId",
+        "valoraciones": """MATCH (u:Usuario)-[v:VALORA]->(p:Pelicula)
+            RETURN u.Usuario.userId AS userId, p.Pelicula.movieId AS movieId,
+                   v.puntuacion AS puntuacion, v.fecha AS `timestamp`""",
+        "peliculas_generos": """MATCH (p:Pelicula)-[:PERTENECE_A]->(g:Genero)
+            RETURN p.Pelicula.movieId AS movieId, g.Genero.nombre AS genero""",
+    }
+    for nombre, consulta in consultas.items():
+        filas = ejecutar(sesion, consulta)
+        columnas = list(filas[0]) if filas else []
+        esperadas = set()
+        actuales = set()
+        for origen, destino in ((tablas[nombre], esperadas), (filas, actuales)):
+            for fila in origen:
+                valores = []
+                for columna in columnas:
+                    valor = fila[columna]
+                    if valor is None or valor == "":
+                        valor = ""
+                    elif columna == "puntuacion":
+                        valor = float(valor)
+                    else:
+                        valor = str(valor)
+                    valores.append(valor)
+                destino.add(tuple(valores))
+        if len(filas) != len(tablas[nombre]) or actuales != esperadas:
+            raise RuntimeError(f"La importación de {nombre} no coincide con los CSV.")
+
+    for etiqueta, propiedad, prefijo in (
+        ("Usuario", "userId", "usuario:"), ("Pelicula", "movieId", "pelicula:"),
+    ):
+        filas = ejecutar(sesion, f"""
+            MATCH (v:{etiqueta})
+            WHERE id(v) != "{prefijo}" + toString(v.{etiqueta}.{propiedad})
+            RETURN count(v) AS errores
+        """)
+        if filas[0]["errores"]:
+            raise RuntimeError(f"Identificadores inconsistentes en {etiqueta}.")
+    generos_esperados = set()
+    for fila in tablas["peliculas_generos"]:
+        generos_esperados.add(fila["genero"])
+    generos = ejecutar(sesion, "MATCH (g:Genero) RETURN g.Genero.nombre AS nombre")
+    nombres = set()
+    for genero in generos:
+        nombres.add(genero["nombre"])
+    if nombres != generos_esperados or len(generos) != len(nombres):
+        raise RuntimeError("Los géneros del grafo no coinciden con los CSV.")
+
+
+def main():
+    tablas = leer_fuentes()
+    with conectar(usar_espacio=False) as sesion:
+        preparar_grafo(sesion)
+        importar(sesion, tablas)
+        validar_importacion(sesion, tablas)
+    print(
+        f"Grafo preparado: {len(tablas['peliculas'])} películas, "
+        f"{len(tablas['usuarios'])} usuarios y {len(tablas['valoraciones'])} valoraciones."
+    )
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        sys.exit(1)

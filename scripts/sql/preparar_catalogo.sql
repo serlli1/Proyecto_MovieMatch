@@ -1,5 +1,5 @@
 -- MovieMatch | ETL MovieLens + TMDB
--- Este SQL se ejecuta desde 03_etl_duckdb.py.
+-- Este SQL se ejecuta desde preparar_datos.py.
 -- Las rutas entre {{...}} se sustituyen por rutas locales previamente escapadas.
 -- 1. Importar los CSV originales conservando todos los campos como texto.
 -- El esquema de la fuente queda disponible para inspeccionar problemas.

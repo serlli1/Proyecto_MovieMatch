@@ -120,7 +120,7 @@ def cargar_lotes(con, db, modelo):
 def main():
     if not RUTA_DUCKDB.is_file():
         raise FileNotFoundError(
-            f"No existe {RUTA_DUCKDB}. Ejecuta primero scripts/03_etl_duckdb.py."
+            f"No existe {RUTA_DUCKDB}. Ejecuta primero scripts/preparar_datos.py."
         )
     with duckdb.connect(str(RUTA_DUCKDB), read_only=True) as con:
         esperado, ids_unicos, validas = con.execute("""

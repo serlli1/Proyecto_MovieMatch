@@ -2,7 +2,7 @@
 """MovieMatch: ETL reproducible de MovieLens + metadatos de TMDB con DuckDB.
 
 Ejecutar desde la raíz del repositorio:
-    python scripts/03_etl_duckdb.py
+    python scripts/preparar_datos.py
 
 Requiere los CSV originales de MovieLens en datos/fuentes/ml-latest-small/.
 NO toca Qdrant ni NebulaGraph; produce una base DuckDB y exportaciones.

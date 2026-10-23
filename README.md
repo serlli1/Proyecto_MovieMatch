@@ -1,9 +1,13 @@
 # MovieMatch
 
-Buscador semántico para **Agregación y Presentación de Datos en IoT**. DuckDB integra
-los CSV de MovieLens y TMDB mediante SQL. Qdrant almacena las sinopsis vectorizadas
-y permite buscar por significado, con filtros de género y año. Streamlit ofrece
-la interfaz y `buscar.py` permite consultar desde la terminal.
+Proyecto de **Agregación y Presentación de Datos en IoT**. DuckDB prepara MovieLens
+y TMDB; Qdrant busca por significado y por similitud con favoritas; NebulaGraph
+almacena usuarios, películas, géneros y valoraciones para obtener recomendaciones
+colaborativas. Streamlit presenta los resultados en dos pestañas:
+
+- **Buscar películas:** búsqueda semántica con filtros y Top 10 de la comunidad.
+- **Para ti:** selector de usuario anónimo, recomendaciones por contenido,
+  recomendaciones colaborativas y barras de géneros favoritos.
 
 El catálogo local contiene 9.742 películas, 610 usuarios y 100.836 valoraciones;
 9.494 películas tienen sinopsis válida para Qdrant. Las demás permanecen en DuckDB.
@@ -19,10 +23,10 @@ iniciales. Ejecuta los comandos desde la raíz del proyecto:
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-docker compose up -d
+docker compose up -d --wait
 ```
 
-Si `.venv` ya existe, basta con activarlo. Las cuatro dependencias directas están
+Si `.venv` ya existe, basta con activarlo. Las dependencias directas están
 fijadas a las versiones comprobadas; las dependencias transitivas no están fijadas.
 Qdrant conserva los datos en el volumen `qdrant_data` y solo publica el puerto local.
 Panel: [Qdrant](http://localhost:6333/dashboard). Puedes detenerlo sin borrar datos
@@ -44,7 +48,7 @@ si falta en `datos/fuentes/`, y comprueba el MD5 de la descarga. También puedes
 un CSV ya descargado mediante `--metadata /ruta/movies_metadata.csv`.
 
 ```bash
-python scripts/03_etl_duckdb.py
+python scripts/preparar_datos.py
 ```
 
 Este comando reconstruye las tablas de `datos/moviematch.duckdb` dentro de una
@@ -56,7 +60,7 @@ las filas de TMDB con errores de lectura se omiten.
 
 En `datos/procesados/` genera `peliculas_qdrant.parquet` y cuatro CSV para el futuro
 grafo: `peliculas_nebula.csv`, `usuarios_nebula.csv`, `valoraciones_nebula.csv` y
-`peliculas_generos_nebula.csv`. NebulaGraph no está implementado ni es necesario.
+`peliculas_generos_nebula.csv`. El importador del grafo utiliza estos cuatro CSV.
 Las consultas académicas están en `scripts/sql/consultas_ejemplo.sql`.
 
 ## Carga y búsqueda
@@ -89,11 +93,76 @@ sinopsis para construir los filtros. El intervalo completo incluye películas si
 año; al acotarlo se excluyen. En terminal, omitir `--desde` y `--hasta` incluye todos
 los años. `QDRANT_URL` permite cambiar la dirección, por defecto `http://localhost:6333`.
 
+## NebulaGraph y recomendaciones
+
+Se usa NebulaGraph **3.8.0**, con un servicio `metad`, un `storaged` y un `graphd`.
+Las tres imágenes oficiales incluyen **linux/arm64**, comprobado en sus manifiestos
+y en Docker Desktop sobre Apple Silicon. No hace falta emulación. Véanse el
+[despliegue oficial](https://vesoft-inc.github.io/nebula-docker-compose/)
+y las [consultas MATCH](https://docs.nebula-graph.io/3.8.0/3.ngql-guide/7.general-query-statements/2.match/).
+Los volúmenes `nebula_meta` y `nebula_storage` conservan el grafo. El primer arranque
+puede tardar varios minutos; `--wait` espera a que los servicios estén disponibles.
+
+Con los CSV y Qdrant actuales, solo necesitas:
+
+```bash
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+docker compose up -d --wait
+python cargar_nebula.py
+python -m streamlit run app.py
+```
+
+No hace falta repetir el ETL ni la carga de Qdrant. Si faltan los CSV, ejecuta antes
+`python scripts/preparar_datos.py` siguiendo la sección de fuentes.
+
+El importador crea el espacio `moviematch`, sin borrar otros espacios. Comprueba
+los CSV antes de escribir y contrasta los datos importados, no solo sus cantidades.
+Puede repetirse: los mismos IDs y parejas de relaciones se actualizan sin duplicarse.
+No elimina registros sobrantes; si los CSV cambian y sobran registros, la validación
+lo comunica. Una carga interrumpida puede retomarse ejecutándolo otra vez.
+
+El esquema es:
+
+```text
+Usuario(userId) --VALORA(puntuacion, fecha)--> Pelicula(movieId, titulo, anio)
+Pelicula --PERTENECE_A--> Genero(nombre)
+```
+
+Los IDs usan los prefijos `usuario:`, `pelicula:` y `genero:`. Las películas sin
+sinopsis también están en el grafo. El `movieId` coincide con el Point ID de Qdrant.
+El puerto `9669` se publica solo en localhost; el despliegue local utiliza
+`root` / `nebula`. El cliente admite `NEBULA_HOST`, `NEBULA_PORT`, `NEBULA_USER` y
+`NEBULA_PASSWORD` mediante variables de entorno. Cambiar la variable de contraseña
+no cambia por sí mismo la contraseña almacenada en NebulaGraph.
+
+Reglas de recomendación:
+
+- **Porque te gustó:** favoritas con nota ≥4 presentes en Qdrant. Se consulta cada
+  favorita por separado, excluyendo todas las películas ya valoradas. Para cada
+  candidata se conserva su mayor similitud y la favorita que la produjo. Se muestran
+  las cinco primeras; no se promedian embeddings ni se generan nuevos vectores.
+- **A usuarios como tú:** al menos tres favoritas compartidas con nota ≥4 en ambos
+  perfiles. Se toman hasta 30 vecinos por número de coincidencias. Cada vecino que
+  puntúa una candidata con ≥4 aporta ese número de coincidencias a su puntuación.
+  Se excluyen las ya valoradas y se ordena por suma, número de apoyos y nota media.
+  Todos los recorridos y agregaciones se ejecutan en NebulaGraph.
+- **Géneros favoritos:** media por género con al menos cinco películas valoradas;
+  desempate por cantidad. Se muestran hasta cinco, sin rellenar resultados ausentes.
+- **Top 10:** media global con al menos 20 valoraciones; desempate por cantidad.
+
+Los resultados se guardan en caché cinco minutos y el perfil seleccionado forma
+parte de la clave. No se usan carteles externos: las tarjetas incluyen un marcador
+🎬. Las sinopsis colaborativas se recuperan de Qdrant cuando existen; si faltan se
+indica expresamente. Si NebulaGraph no está disponible, la búsqueda semántica sigue
+funcionando. Los filtros laterales corresponden únicamente al buscador.
+
 ## Archivos
 
 - `app.py`, `buscar.py`: interfaz y terminal.
-- `src/motor.py`: modelo, consultas y metadatos de Qdrant.
-- `cargar_movielens.py`: carga de DuckDB a Qdrant.
-- `scripts/03_etl_duckdb.py`, `scripts/sql/`: integración y consultas SQL.
+- `src/motor.py`: búsqueda, metadatos y recomendaciones de contenido en Qdrant.
+- `src/grafo.py`: consultas nGQL y conexión con NebulaGraph.
+- `cargar_movielens.py`, `cargar_nebula.py`: importadores de cada base de datos.
+- `scripts/preparar_datos.py`, `scripts/sql/`: integración y consultas SQL.
 
 Los datasets y las bases locales están excluidos de Git.

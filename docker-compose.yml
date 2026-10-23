@@ -6,5 +6,67 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     restart: unless-stopped
+  metad:
+    image: vesoft/nebula-metad:v3.8.0
+    command:
+      - --meta_server_addrs=metad:9559
+      - --local_ip=metad
+      - --ws_ip=0.0.0.0
+      - --data_path=/data/meta
+      - --log_dir=/logs
+      - --minloglevel=2
+      - --heartbeat_interval_secs=1
+    volumes:
+      - nebula_meta:/data/meta
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:19559/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  storaged:
+    image: vesoft/nebula-storaged:v3.8.0
+    command:
+      - --meta_server_addrs=metad:9559
+      - --local_ip=storaged
+      - --ws_ip=0.0.0.0
+      - --data_path=/data/storage
+      - --log_dir=/logs
+      - --minloglevel=2
+      - --heartbeat_interval_secs=1
+    depends_on:
+      metad:
+        condition: service_healthy
+    volumes:
+      - nebula_storage:/data/storage
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:19779/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  graphd:
+    image: vesoft/nebula-graphd:v3.8.0
+    command:
+      - --meta_server_addrs=metad:9559
+      - --local_ip=graphd
+      - --ws_ip=0.0.0.0
+      - --log_dir=/logs
+      - --minloglevel=2
+      - --heartbeat_interval_secs=1
+      - --enable_authorize=true
+    depends_on:
+      metad:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:9669:9669"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:19669/status"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
 volumes:
   qdrant_data:
+  nebula_meta:
+  nebula_storage:
