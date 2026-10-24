@@ -33,3 +33,6 @@ MovieMatch_actualizacion_Streamlit/
 
 # Copias de recuperación del grafo
 datos/respaldos_nebula/
+
+# Caché de consultas E5
+datos/consultas_e5.sqlite*

@@ -86,16 +86,26 @@ Para preparar Qdrant por primera vez o actualizarlo deliberadamente:
 python cargar_movielens.py
 ```
 
-La carga lee DuckDB, genera vectores por lotes y crea `peliculas_v2` solo si no
-existe. Si existe, comprueba sus 384 dimensiones y distancia coseno, y actualiza
-puntos por `movieId`. Mantiene índices sobre `generos` y `anio`; nunca elimina ni
-recrea colecciones y avisa si el recuento final no coincide. Una interrupción puede
-dejar una carga parcial: repetirla actualiza los mismos IDs. Si ya está cargada,
-no necesitas ejecutar este paso para iniciar la aplicación.
+La carga lee DuckDB y crea `peliculas_e5`: **9.494 películas, 768 dimensiones y
+similitud coseno**, con índices sobre `generos` y `anio`. Conserva los IDs y payloads.
+Lee lotes de 64 películas y genera embeddings de 8 en 8, adecuados para Apple Silicon
+con 16 GB. Al repetirla, solo recalcula puntos ausentes o con metadatos distintos;
+comprueba todos los IDs, payloads, dimensiones y normas al terminar. No borra puntos
+ni colecciones. La colección anterior `peliculas_v2` se conserva temporalmente intacta
+como respaldo. Si E5 ya está cargada, no necesitas repetir este paso.
 
-Carga y consultas comparten `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2`.
-El modelo se descarga la primera vez que se utiliza. Las sinopsis son principalmente
-inglesas; el modelo admite consultas en español. La similitud no es una probabilidad.
+Carga y consultas comparten [Multilingual E5-base](https://huggingface.co/intfloat/multilingual-e5-base)
+(`intfloat/multilingual-e5-base`), con vectores normalizados y un máximo de 512 tokens
+(los textos más largos se truncan). El modelo se descarga la primera vez. Los textos
+almacenados llevan `passage: `; las búsquedas y las favoritas usadas como consulta
+llevan `query: `, tanto en español como en inglés. Las películas se representan mediante
+su sinopsis y sus géneros. La similitud coseno no es una probabilidad ni un porcentaje
+de acierto; no se aplica un umbral arbitrario.
+
+La carga prepara también los vectores de consulta de las películas y los guarda en
+`datos/consultas_e5.sqlite`, una caché local por modelo y texto excluida de Git. Así,
+cambiar de perfil no vuelve a codificar sus favoritas. Si falta una entrada, se calcula
+cuando se necesita. La colección activa y el modelo se definen en `src/motor.py`.
 
 ```bash
 python -m streamlit run app.py
@@ -183,7 +193,9 @@ Reglas de recomendación:
 - **Porque te gustó:** favoritas con nota ≥4 presentes en Qdrant. Se consulta cada
   favorita por separado, excluyendo todas las películas ya valoradas. Para cada
   candidata se conserva su mayor similitud y la favorita que la produjo. Se muestran
-  las cinco primeras; no se promedian embeddings ni se generan nuevos vectores.
+  las cinco primeras con títulos distintos, excluyendo también títulos ya valorados.
+  Cada consulta utiliza el texto de la favorita con `query: ` y su vector en caché;
+  no se promedian vectores ni se usa el vector `passage: ` del punto como consulta.
 - **A usuarios como tú:** al menos tres favoritas compartidas con nota ≥4 en ambos
   perfiles. Se toman hasta 30 vecinos por número de coincidencias. Cada vecino que
   puntúa una candidata con ≥4 aporta ese número de coincidencias a su puntuación.

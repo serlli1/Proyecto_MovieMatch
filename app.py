@@ -3,7 +3,8 @@ import streamlit as st
 
 from src import grafo
 from src.motor import (
-    buscar_semanticamente, obtener_metadatos, obtener_peliculas, recomendar_contenido,
+    COLECCION, buscar_semanticamente, obtener_metadatos, obtener_peliculas,
+    recomendar_contenido,
 )
 
 st.set_page_config(
@@ -55,14 +56,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+# La colección forma parte de las claves de caché de Qdrant.
 @st.cache_data(ttl=300, show_spinner=False)
-def metadatos_catalogo():
+def metadatos_catalogo(coleccion):
     return obtener_metadatos()
 
 
 def mostrar_buscador():
     try:
-        total, generos_catalogo, anios = metadatos_catalogo()
+        total, generos_catalogo, anios = metadatos_catalogo(COLECCION)
     except Exception as exc:
         st.error("No se ha podido conectar con Qdrant o recuperar el catálogo.")
         st.info("Comprueba que Docker Desktop está iniciado y que has ejecutado `docker compose up -d`.")
@@ -159,7 +161,7 @@ def perfil_usuario(usuario):
 
 
 @st.cache_data(ttl=300, show_spinner=False)
-def contenido_usuario(usuario):
+def contenido_usuario(usuario, coleccion):
     return recomendar_contenido(perfil_usuario(usuario))
 
 
@@ -225,7 +227,7 @@ def mostrar_perfil():
     st.subheader("Porque te gustó...")
     try:
         with st.spinner("Buscando películas similares a tus favoritas..."):
-            peliculas = contenido_usuario(usuario)
+            peliculas = contenido_usuario(usuario, COLECCION)
         for pelicula in peliculas:
             tarjeta_recomendacion(pelicula, pelicula["motivo"])
         if not peliculas:
