@@ -134,6 +134,34 @@ def preparar_datos():
             raise RuntimeError("La carga de NebulaGraph no pasó la comprobación final.")
 
 
+def activar_almacenamiento_nebula():
+    """Registra storaged antes de exigir su estado healthy en Docker Compose."""
+    import time
+    from src.grafo import conectar, ejecutar as consultar
+
+    print("Comprobando el registro de almacenamiento de NebulaGraph...")
+    ultimo_error = None
+    for intento in range(60):
+        try:
+            with conectar(usar_espacio=False) as sesion:
+                hosts = consultar(sesion, "SHOW HOSTS")
+                if not any(fila.get("Host") == "storaged" for fila in hosts):
+                    consultar(sesion, 'ADD HOSTS "storaged":9779')
+                    print("Almacenamiento de NebulaGraph registrado.")
+                else:
+                    print("Almacenamiento de NebulaGraph ya registrado.")
+            return
+        except Exception as error:
+            ultimo_error = error
+            if intento == 0:
+                print("Esperando a que Graph Service acepte conexiones...")
+            time.sleep(2)
+    raise RuntimeError(
+        "No se pudo registrar el almacenamiento de NebulaGraph. "
+        "Comprueba: docker compose logs graphd metad"
+    ) from ultimo_error
+
+
 def main():
     os.chdir(RAIZ)
     comprobar_docker()
@@ -142,6 +170,8 @@ def main():
         # En macOS, el binario del entorno puede ser un enlace al Python global.
         return subprocess.call([str(PYTHON), str(RAIZ / "instalar.py")], cwd=RAIZ)
     print("Iniciando las bases de datos con Docker...")
+    ejecutar("docker", "compose", "up", "-d")
+    activar_almacenamiento_nebula()
     ejecutar("docker", "compose", "up", "-d", "--wait")
     preparar_datos()
     print("\nMovieMatch preparado. Iniciando Streamlit en http://127.0.0.1:8501")
