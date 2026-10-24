@@ -8,6 +8,7 @@ from functools import lru_cache
 
 from qdrant_client import QdrantClient, models
 
+# Representación fija: cambiar texto, prefijos o tokenización exige colección y caché nuevas.
 COLECCION = "peliculas_e5"
 MODELO = "intfloat/multilingual-e5-base"
 DIMENSION = 768
@@ -38,7 +39,7 @@ def vectorizar_consultas(textos):
     CACHE_CONSULTAS.parent.mkdir(parents=True, exist_ok=True)
     vectores = [None] * len(textos)
     pendientes = []
-    with sqlite3.connect(CACHE_CONSULTAS, timeout=30) as cache:
+    with closing(sqlite3.connect(CACHE_CONSULTAS, timeout=30)) as cache, cache:
         cache.execute("""
             CREATE TABLE IF NOT EXISTS consultas (
                 modelo TEXT, texto TEXT, vector TEXT,

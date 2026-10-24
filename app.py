@@ -31,16 +31,23 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+def titulo_con_anio(pelicula):
+    titulo = str(pelicula.get("titulo", "Sin título")).strip()
+    anio = pelicula.get("anio")
+    if anio is None or titulo.endswith(f"({anio})"):
+        return titulo
+    return f"{titulo} ({anio})"
+
+
 def tarjeta_pelicula(pelicula, puesto, similitud):
     """Muestra título, géneros, sinopsis y similitud de un resultado."""
-    titulo = str(pelicula.get("titulo", "Sin título"))
-    anio = pelicula.get("anio") or "—"
+    titulo = titulo_con_anio(pelicula)
     generos = ", ".join(pelicula.get("generos", [])) or "Sin género"
 
     with st.container(border=True):
         cabecera, marcador = st.columns([5, 1.4], vertical_alignment="center")
         with cabecera:
-            st.markdown(f"**{puesto:02d} · {titulo} ({anio})**")
+            st.markdown(f"**{puesto:02d} · {titulo}**")
             st.caption(generos)
         with marcador:
             st.metric("Similitud", f"{similitud:.4f}")
@@ -181,9 +188,8 @@ def tarjeta_recomendacion(pelicula, motivo):
         with imagen:
             st.markdown("## 🎬")
         with detalle:
-            titulo = pelicula["titulo"]
-            anio = pelicula.get("anio") or "—"
-            st.markdown(f"**{titulo} ({anio})**")
+            titulo = titulo_con_anio(pelicula)
+            st.markdown(f"**{titulo}**")
             st.caption(", ".join(pelicula.get("generos", [])) or "Sin género")
             sinopsis = pelicula.get("sinopsis")
             if sinopsis:
@@ -200,23 +206,26 @@ def mostrar_top():
     st.caption("Nota media · al menos 20 valoraciones por película")
     try:
         peliculas = top_comunidad()
-    except Exception:
+    except Exception as exc:
         st.info("El Top 10 no está disponible. Comprueba que NebulaGraph está iniciado y cargado.")
+        with st.expander("Detalles técnicos"):
+            st.exception(exc)
         return
     if not peliculas:
         st.info("Todavía no hay suficientes valoraciones para elaborar la clasificación.")
     for puesto, pelicula in enumerate(peliculas, 1):
-        titulo = pelicula["titulo"]
-        anio = pelicula.get("anio") or "—"
-        st.markdown(f"**{puesto}. {titulo} ({anio})**")
+        titulo = titulo_con_anio(pelicula)
+        st.markdown(f"**{puesto}. {titulo}**")
         st.caption(f"★ {pelicula['media']:.2f}/5 · {pelicula['votos']} valoraciones")
 
 
 def mostrar_perfil():
     try:
         usuarios = usuarios_disponibles()
-    except Exception:
+    except Exception as exc:
         st.info("Los perfiles no están disponibles. Comprueba que NebulaGraph está iniciado y cargado.")
+        with st.expander("Detalles técnicos"):
+            st.exception(exc)
         return
     if not usuarios:
         st.info("Importa los datos del grafo para disponer de perfiles.")
@@ -232,8 +241,10 @@ def mostrar_perfil():
             tarjeta_recomendacion(pelicula, pelicula["motivo"])
         if not peliculas:
             st.info("No hay recomendaciones disponibles a partir de tus favoritas con sinopsis.")
-    except Exception:
+    except Exception as exc:
         st.info("Las recomendaciones por contenido no están disponibles en este momento.")
+        with st.expander("Detalles técnicos"):
+            st.exception(exc)
 
     st.subheader("A usuarios como tú...")
     try:
@@ -242,8 +253,10 @@ def mostrar_perfil():
         detalles = {}
         try:
             detalles = obtener_peliculas(ids)
-        except Exception:
+        except Exception as exc:
             st.caption("Las sinopsis no están disponibles en este momento.")
+            with st.expander("Detalles técnicos"):
+                st.exception(exc)
         for pelicula in peliculas:
             pelicula = dict(pelicula)
             pelicula["sinopsis"] = detalles.get(pelicula["movieId"], {}).get("sinopsis")
@@ -254,8 +267,10 @@ def mostrar_perfil():
             tarjeta_recomendacion(pelicula, motivo)
         if not peliculas:
             st.info("No hay suficientes coincidencias para recomendar películas de otros usuarios.")
-    except Exception:
+    except Exception as exc:
         st.info("Las recomendaciones de otros usuarios no están disponibles en este momento.")
+        with st.expander("Detalles técnicos"):
+            st.exception(exc)
 
     st.subheader("Tus géneros favoritos")
     st.caption("Ordenados por nota media, con al menos 5 películas valoradas en cada género.")
@@ -269,8 +284,10 @@ def mostrar_perfil():
             st.progress(genero["media"] / 5, text=etiqueta)
         if not generos:
             st.info("Todavía no hay géneros con suficientes valoraciones.")
-    except Exception:
+    except Exception as exc:
         st.info("Tus géneros favoritos no están disponibles en este momento.")
+        with st.expander("Detalles técnicos"):
+            st.exception(exc)
 
 
 buscar, para_ti = st.tabs(["Buscar películas", "Para ti"])

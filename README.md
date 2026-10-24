@@ -47,9 +47,28 @@ datos/fuentes/ml-latest-small/links.csv
 datos/fuentes/ml-latest-small/ratings.csv
 ```
 
+La edición de referencia es **Latest Small de septiembre de 2018** ([GroupLens](https://www.grouplens.org/datasets/movielens/)).
+El enlace «latest» puede cambiar y no es un archivo de versiones inmutables. Estas
+huellas SHA-256 identifican exactamente los CSV usados en esta entrega:
+
+<details>
+<summary>Huellas de las fuentes MovieLens</summary>
+
+```text
+movies.csv: 5a5f32dd9bb3797b8e728a1b98958789d2b13f294a69fdfbc5727f8a9611aa07
+links.csv: 97ad18e4e56a09363c65676b6cb3482ce3e2cea2372a24620c1599c843325f31
+ratings.csv: aa289ca83157595d0df6aea1be6a4ded676ddc4385472e8313a8ed9805352646
+```
+
+</details>
+
 El ETL descarga `movies_metadata.csv` del [depósito de Zenodo](https://zenodo.org/records/18099452)
 si falta en `datos/fuentes/`, y comprueba el MD5 de la descarga. También puedes aportar
 un CSV ya descargado mediante `--metadata /ruta/movies_metadata.csv`.
+Es una copia de metadatos de [TMDB](https://developer.themoviedb.org/docs/getting-started),
+no una consulta a su API: no se necesita clave. Referencia estable de la copia:
+[DOI 10.5281/zenodo.18099452](https://doi.org/10.5281/zenodo.18099452),
+MD5 `42bf3ef8c208a01a4776955875978b1e`.
 
 ```bash
 python scripts/preparar_datos.py
@@ -60,7 +79,9 @@ transacción y actualiza las exportaciones y `datos/reporte_etl.json`. No hace f
 repetirlo para buscar si ya dispones del catálogo preparado. El JOIN utiliza
 `tmdbId`, descarta IMDb incompatibles y resuelve coincidencias duplicadas priorizando
 IMDb, año y sinopsis. Conserva controles de claves, valoraciones y relaciones;
-las filas de TMDB con errores de lectura se omiten.
+las filas de TMDB con errores de lectura se omiten. Una sinopsis válida tiene al
+menos 40 caracteres tras normalizar espacios y no es un marcador de ausencia.
+Este criterio se aplica una sola vez en el SQL y se reutiliza para ambas bases.
 
 En `datos/procesados/` genera `peliculas_qdrant.parquet` y cuatro CSV para el
 grafo: `peliculas_nebula.csv`, `usuarios_nebula.csv`, `valoraciones_nebula.csv` y
@@ -94,13 +115,22 @@ comprueba todos los IDs, payloads, dimensiones y normas al terminar. No borra pu
 ni colecciones. La colección anterior `peliculas_v2` se conserva temporalmente intacta
 como respaldo. Si E5 ya está cargada, no necesitas repetir este paso.
 
+**Mantenimiento:** la reanudación compara payloads, no detecta cambios de estrategia.
+La representación de `peliculas_e5` queda fijada por el modelo, sinopsis + géneros,
+prefijos, normalización y límite de 512 tokens. Si se cambia alguno, se debe preparar
+otra colección y otra ruta `CACHE_CONSULTAS`, validarlas antes de activar la nueva
+configuración y conservar las anteriores. No reutilizar esta colección o caché
+esperando que el cargador detecte ese cambio; no hay recodificación masiva automática.
+
 Carga y consultas comparten [Multilingual E5-base](https://huggingface.co/intfloat/multilingual-e5-base)
 (`intfloat/multilingual-e5-base`), con vectores normalizados y un máximo de 512 tokens
 (los textos más largos se truncan). El modelo se descarga la primera vez. Los textos
 almacenados llevan `passage: `; las búsquedas y las favoritas usadas como consulta
 llevan `query: `, tanto en español como en inglés. Las películas se representan mediante
 su sinopsis y sus géneros. La similitud coseno no es una probabilidad ni un porcentaje
-de acierto; no se aplica un umbral arbitrario.
+de acierto; no se aplica un umbral arbitrario. E5 es la elección definitiva tras
+una evaluación cualitativa manual que produjo resultados más relevantes; no se ha
+medido una mejora estadística ni se atribuyen porcentajes de precisión.
 
 La carga prepara también los vectores de consulta de las películas y los guarda en
 `datos/consultas_e5.sqlite`, una caché local por modelo y texto excluida de Git. Así,
@@ -108,7 +138,7 @@ cambiar de perfil no vuelve a codificar sus favoritas. Si falta una entrada, se 
 cuando se necesita. La colección activa y el modelo se definen en `src/motor.py`.
 
 ```bash
-python -m streamlit run app.py
+python -m streamlit run app.py --server.address 127.0.0.1
 python buscar.py "aventuras en el espacio" --genero "Ciencia ficción"
 python buscar.py "un viaje en el tiempo" --desde 1990 --hasta 2020 --limite 5
 ```
@@ -128,18 +158,26 @@ y las [consultas MATCH](https://docs.nebula-graph.io/3.8.0/3.ngql-guide/7.genera
 Los volúmenes `nebula_meta` y `nebula_storage` conservan el grafo. El primer arranque
 puede tardar varios minutos; `--wait` espera a que los servicios estén disponibles.
 
-Con los CSV y Qdrant actuales, solo necesitas:
+En un **clon nuevo**, las bases y los CSV no están incluidos. Tras preparar el entorno,
+arrancar Docker y ubicar las fuentes como se explica arriba, ejecuta en este orden:
+
+```bash
+python scripts/preparar_datos.py
+python cargar_movielens.py
+python cargar_nebula.py
+python -m streamlit run app.py --server.address 127.0.0.1
+```
+
+Con las bases ya cargadas, el arranque habitual es únicamente:
 
 ```bash
 source .venv/bin/activate
-python -m pip install -r requirements.txt
 docker compose up -d --wait
-python cargar_nebula.py
-python -m streamlit run app.py
+python -m streamlit run app.py --server.address 127.0.0.1
 ```
 
-No hace falta repetir el ETL ni la carga de Qdrant. Si faltan los CSV, ejecuta antes
-`python scripts/preparar_datos.py` siguiendo la sección de fuentes.
+No repitas el ETL ni los importadores para iniciar la aplicación. Si solo faltan las
+exportaciones y DuckDB existe, usa `python scripts/preparar_datos.py --solo-exportar`.
 
 El importador crea el espacio `moviematch`, sin borrar otros espacios. Comprueba
 los CSV antes de escribir y contrasta los datos importados, no solo sus cantidades.
@@ -184,7 +222,8 @@ Pelicula --PERTENECE_A--> Genero(nombre)
 Los IDs usan los prefijos `usuario:`, `pelicula:` y `genero:`. Las películas sin
 sinopsis válida permanecen únicamente en el catálogo maestro de DuckDB. El `movieId` coincide con el Point ID de Qdrant.
 El puerto `9669` se publica solo en localhost; el despliegue local utiliza
-`root` / `nebula`. El cliente admite `NEBULA_HOST`, `NEBULA_PORT`, `NEBULA_USER` y
+`root` / `nebula`, credenciales solo para la práctica local, inadecuadas para
+un despliegue público. El cliente admite `NEBULA_HOST`, `NEBULA_PORT`, `NEBULA_USER` y
 `NEBULA_PASSWORD` mediante variables de entorno. Cambiar la variable de contraseña
 no cambia por sí mismo la contraseña almacenada en NebulaGraph.
 
@@ -211,6 +250,95 @@ parte de la clave. No se usan carteles externos: las tarjetas incluyen un marcad
 indica expresamente. Si NebulaGraph no está disponible, la búsqueda semántica sigue
 funcionando. Los filtros laterales corresponden únicamente al buscador.
 
+## Validación y resultados (24 de octubre de 2026)
+
+Auditoría sobre las bases locales: claves únicas y válidas, escala de notas, referencias,
+ausencia de duplicados y de relaciones huérfanas. Se contrastaron todos los IDs,
+payloads y vectores E5 (768 dimensiones y norma unitaria), los CSV y el grafo,
+incluido `SHOW STATS`: **10.105 vértices y 121.748 aristas**. Las cifras del inicio
+quedaron confirmadas; DuckDB y los datos de ambas colecciones y del grafo se conservaron.
+
+Se comprobaron búsquedas en español e inglés, filtros separados y combinados, límites
+y consultas vacías; recomendaciones con los perfiles 1, 2, 414, 442 y 610, favoritas
+ausentes y perfiles vacíos. Un cálculo independiente sobre los CSV coincidió con
+vecinos, afinidad, apoyos, ordenación, Top 10 y géneros de NebulaGraph. El perfil 442
+no tiene favoritas con nota ≥4 y devuelve correctamente cero recomendaciones.
+Streamlit pasó las comprobaciones con `AppTest`: pestañas, cambio de perfil, filtros,
+años sin duplicar y errores desplegables. Se simularon conexiones rechazadas sin
+parar servicios; la parte de la aplicación que usa la otra base siguió funcionando.
+
+El ETL se reprodujo **en memoria** a partir de las fuentes locales y sus cinco
+exportaciones temporales coincidieron con las actuales. Se validaron dependencias
+(`pip check`), configuración de Docker, SQL de ejemplo, CLI y arranque HTTP de
+Streamlit en localhost. No se ejecutó una instalación desde cero con nuevas descargas
+y volúmenes vacíos, ni una revisión visual
+en navegador: la validación de interfaz se realizó con `AppTest`.
+
+Ejemplos reales, respetando el texto y las mayúsculas de la consulta:
+
+| Consulta | Primeros tres resultados |
+|---|---|
+| Un hombre descubre que vive en una realidad simulada | World on a Wire (Welt am Draht); Anomalisa; Man with the Movie Camera, The (Chelovek s kino-apparatom) |
+| Una familia lucha por sobrevivir a una invasión de zombis | Land of the Dead; Wyrmwood; Dawn of the Dead |
+| Una expedición espacial para salvar a la humanidad | Voyage to the Bottom of the Sea; Sunshine; Absolutely Anything |
+| a man discovers that his reality is a computer simulation | Thirteenth Floor, The; World on a Wire (Welt am Draht); Man of the Year |
+
+Hay coincidencias temáticas útiles y resultados menos precisos; estos ejemplos no
+constituyen una medida de precisión. No se repitió la comparación con MiniLM.
+
+Para repetir las mediciones sin cambiar las bases ni los índices:
+
+```bash
+python scripts/medir_rendimiento.py --repeticiones 6
+```
+
+Mac Apple Silicon, 16 GB, macOS 15.5, Python 3.11.17, E5 en MPS. Tres consultas
+(las primeras de la tabla) y perfiles 1, 2 y 610, alternados dos veces en seis
+repeticiones por operación. Sin caché de resultados de Streamlit. Tiempos en **ms**:
+
+| Operación | Primera | Media posterior | Mediana | Mín.–máx. |
+|---|---:|---:|---:|---:|
+| Generar query E5, modelo cargado | 1089,55 | 43,98 | 14,48 | 13,48–191,81 |
+| Recuperar query SQLite | 0,28 | 0,25 | 0,25 | 0,24–0,26 |
+| Qdrant sin filtros, vector preparado | 40,15 | 8,73 | 8,53 | 7,84–10,06 |
+| Qdrant con género y año, vector preparado | 11,42 | 4,76 | 4,67 | 3,21–7,24 |
+| Búsqueda completa sin filtros, query en caché | 18,18 | 18,08 | 17,95 | 17,19–19,60 |
+| Búsqueda completa con filtros, query en caché | 16,56 | 16,46 | 16,44 | 14,95–18,04 |
+| Recuperar tres películas por ID | 16,38 | 15,03 | 14,78 | 14,02–16,89 |
+| Contenido, perfil preparado | 613,95 | 854,78 | 525,65 | 64,25–2204,01 |
+| Nebula: Top 10 | 425,00 | 363,67 | 358,41 | 305,62–437,10 |
+| Nebula: perfil | 14,71 | 19,91 | 13,25 | 8,24–41,00 |
+| Nebula: colaborativas, perfil preparado | 123,94 | 132,15 | 125,09 | 69,68–198,97 |
+| Nebula: géneros favoritos | 17,38 | 18,73 | 13,29 | 9,41–33,10 |
+
+La carga inicial del modelo desde disco tardó **8,044 s**; no está incluida en la
+inferencia de la tabla. Tras calentar el modelo, generar y guardar cada una de las
+tres consultas en una caché temporal vacía tardó 18,15, 14,76 y 16,54 ms.
+«Primera» es la primera llamada medida de cada operación, no un servidor recién
+arrancado. Las filas Qdrant con vector preparado usan una conexión reutilizada;
+incluyen transporte y deserialización. Las funciones completas incluyen creación de
+conexión y procesamiento Python; las de contenido y colaborativas excluyen obtener
+el perfil, ya preparado. El contenido utiliza la caché persistente de favoritas.
+Los tiempos dependen del historial y del estado del equipo. No se midió el efecto
+causal de los índices: la diferencia entre búsquedas filtradas y no filtradas no
+permite atribuirles una mejora de rendimiento.
+
+## Limitaciones
+
+El resultado depende del catálogo y de la calidad de sus sinopsis, principalmente
+en inglés; E5 trunca a 512 tokens. Las preferencias y vecinos se limitan a los
+usuarios de MovieLens. Las películas sin historial pueden aparecer por contenido,
+pero no disponen de señal colaborativa; un usuario sin favoritas no recibe
+recomendaciones por contenido. La similitud coseno no es una probabilidad.
+
+## Referencias técnicas
+
+Fuentes y modelo enlazados en sus secciones. Documentación adicional:
+[DuckDB: CSV](https://duckdb.org/docs/stable/data/csv/overview),
+[Qdrant: índices](https://qdrant.tech/documentation/manage-data/indexing/),
+[NebulaGraph: MATCH](https://docs.nebula-graph.io/3.8.0/3.ngql-guide/7.general-query-statements/2.match/)
+y [Streamlit: AppTest](https://docs.streamlit.io/develop/api-reference/app-testing/st.testing.v1.apptest).
+
 ## Archivos
 
 - `app.py`, `buscar.py`: interfaz y terminal.
@@ -218,5 +346,6 @@ funcionando. Los filtros laterales corresponden únicamente al buscador.
 - `src/grafo.py`: consultas nGQL y conexión con NebulaGraph.
 - `cargar_movielens.py`, `cargar_nebula.py`: importadores de cada base de datos.
 - `scripts/preparar_datos.py`, `scripts/sql/`: integración y consultas SQL.
+- `scripts/medir_rendimiento.py`: mediciones reproducibles con `perf_counter`.
 
 Los datasets y las bases locales están excluidos de Git.
