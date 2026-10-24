@@ -18,7 +18,7 @@ Necesitas **[Python 3.11](https://www.python.org/downloads/)**, **[Docker Deskto
    - **Windows:** abre `instalar.bat` (o ejecútalo desde la terminal).
 3. Abre **http://127.0.0.1:8501** si el navegador no se abre automáticamente.
 
-El instalador crea `.venv`, instala las dependencias, inicia los contenedores, descarga y verifica las fuentes, ejecuta el ETL, llena Qdrant y NebulaGraph y arranca Streamlit. La primera ejecución descarga también el modelo E5 y genera miles de embeddings; requiere tiempo y espacio en disco. **No interrumpas esa primera carga salvo que sea necesario.** Puedes repetir el instalador si falla: reutiliza las bases ya completas y no elimina datos.
+El instalador crea `.venv`, instala las dependencias, inicia los contenedores, descarga y verifica las fuentes, ejecuta el ETL, llena Qdrant y NebulaGraph y arranca Streamlit. La primera ejecución descarga también el modelo E5 y genera miles de embeddings; requiere tiempo y espacio en disco. **No interrumpas esa primera carga salvo que sea necesario.** Las descargas HTTPS validan el certificado con los almacenes del sistema y de Mozilla; ante errores de certificados, revisa la configuración de Windows, VPN o antivirus. Puedes repetir el instalador si falla: reutiliza las bases ya completas y no elimina datos.
 
 **Siguientes ejecuciones:** utiliza el mismo `instalar.command` o `instalar.bat`. Si las bases ya están completas, no repite las descargas ni las cargas.
 

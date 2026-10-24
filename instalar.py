@@ -4,11 +4,11 @@ import os
 import shutil
 import subprocess
 import sys
-import urllib.request
 import zipfile
 from contextlib import closing
 from io import BytesIO
 from pathlib import Path
+
 
 RAIZ = Path(__file__).resolve().parent
 ENTORNO = RAIZ / ".venv"
@@ -63,8 +63,10 @@ def comprobar_movielens():
         return
 
     print("Descargando MovieLens Latest Small...")
-    peticion = urllib.request.Request(URL_MOVIELENS, headers={"User-Agent": "MovieMatch/1.0"})
-    with urllib.request.urlopen(peticion, timeout=120) as respuesta:
+    from scripts.https_seguro import abrir_https
+    from urllib.request import Request
+    peticion = Request(URL_MOVIELENS, headers={"User-Agent": "MovieMatch/1.0"})
+    with abrir_https(peticion, timeout=120) as respuesta:
         contenido = respuesta.read()
     with zipfile.ZipFile(BytesIO(contenido)) as comprimido:
         # Extraemos únicamente los tres CSV que utiliza el ETL.
@@ -78,6 +80,47 @@ def comprobar_movielens():
     for nombre, datos in archivos.items():
         (FUENTES / nombre).write_bytes(datos)
 
+
+
+def comprobar_tmdb():
+    """Descarga sinopsis de Zenodo con HTTPS validado y MD5 comprobado."""
+    from scripts.https_seguro import abrir_https
+    from urllib.request import Request
+
+    destino = RAIZ / "datos" / "fuentes" / "movies_metadata.csv"
+    url = "https://zenodo.org/records/18099452/files/movies_metadata.csv?download=1"
+    checksum = "42bf3ef8c208a01a4776955875978b1e"
+
+    def md5_de_archivo(archivo):
+        md5 = hashlib.md5()  # MD5 se emplea solo para integridad del dataset publicado.
+        with archivo.open("rb") as entrada:
+            for bloque in iter(lambda: entrada.read(1024 * 1024), b""):
+                md5.update(bloque)
+        return md5.hexdigest()
+
+    if destino.is_file():
+        if md5_de_archivo(destino) != checksum:
+            raise RuntimeError(
+                "Los metadatos TMDB existentes no coinciden con el archivo original. "
+                "Comprueba datos/fuentes/movies_metadata.csv."
+            )
+        print("Metadatos TMDB ya preparados.")
+        return
+
+    print("Descargando sinopsis TMDB desde Zenodo...")
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    temporal = destino.with_name(destino.name + ".parcial")
+    try:
+        peticion = Request(url, headers={"User-Agent": "MovieMatch/1.0"})
+        with abrir_https(peticion, timeout=120) as respuesta, temporal.open("wb") as salida:
+            for bloque in iter(lambda: respuesta.read(1024 * 1024), b""):
+                salida.write(bloque)
+        if temporal.stat().st_size < 1_000_000 or md5_de_archivo(temporal) != checksum:
+            raise RuntimeError("El fichero TMDB no coincide con el checksum de Zenodo.")
+        temporal.replace(destino)
+    except Exception:
+        temporal.unlink(missing_ok=True)
+        raise
 
 def qdrant_listo():
     from qdrant_client import models
@@ -120,7 +163,8 @@ def preparar_datos():
         return
 
     comprobar_movielens()
-    print("Preparando datos con DuckDB (TMDB se descarga automáticamente si falta)...")
+    comprobar_tmdb()
+    print("Preparando datos con DuckDB...")
     ejecutar(sys.executable, "scripts/preparar_datos.py")
     if not qdrant_ok:
         print("Cargando Qdrant con E5-base (la primera vez puede requerir bastantes recursos)...")
