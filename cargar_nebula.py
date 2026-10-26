@@ -88,10 +88,21 @@ def esperar(sesion, consulta):
             time.sleep(1)
 
 
-def preparar_grafo(sesion):
+def registrar_hosts(sesion):
     hosts = ejecutar(sesion, "SHOW HOSTS")
-    if not any(fila.get("Host") == "storaged" for fila in hosts):
+    if not any(fila.get("Host") == "storaged" and fila.get("Port") == 9779 for fila in hosts):
         ejecutar(sesion, 'ADD HOSTS "storaged":9779')
+    for intento in range(60):
+        hosts = ejecutar(sesion, "SHOW HOSTS")
+        if any(fila.get("Host") == "storaged" and fila.get("Port") == 9779
+               and fila.get("Status") == "ONLINE" for fila in hosts):
+            return
+        time.sleep(1)
+    raise RuntimeError("storaged:9779 no está ONLINE. Revisa docker compose logs storaged metad.")
+
+
+def preparar_grafo(sesion):
+    registrar_hosts(sesion)
     esperar(sesion, f"""
         CREATE SPACE IF NOT EXISTS {ESPACIO}
         (partition_num=10, replica_factor=1, vid_type=FIXED_STRING(80))
@@ -266,11 +277,29 @@ def depurar(sesion, tablas):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--registrar-hosts", action="store_true",
+                        help="Solo registra storaged y espera ONLINE; no requiere CSV ni importa datos")
     parser.add_argument("--depurar", action="store_true",
                         help="Respalda y elimina las películas ausentes de los CSV actuales")
     parser.add_argument("--fuentes", type=Path, default=DATOS,
                         help="Carpeta de CSV; permite recuperar un respaldo sin borrar registros")
     args = parser.parse_args()
+    if args.registrar_hosts:
+        if args.depurar or args.fuentes.resolve() != DATOS.resolve():
+            parser.error("--registrar-hosts se utiliza sin --depurar ni --fuentes.")
+        print("Esperando a Graph Service y registrando el Storage Host...", flush=True)
+        limite = time.monotonic() + 120
+        while True:
+            try:
+                with conectar(usar_espacio=False) as sesion:
+                    registrar_hosts(sesion)
+                break
+            except Exception:
+                if time.monotonic() >= limite:
+                    raise
+                time.sleep(2)
+        print("Storage Host storaged:9779 registrado y ONLINE.")
+        return
     if args.depurar and args.fuentes.resolve() != DATOS.resolve():
         parser.error("La depuración solo admite las exportaciones actuales del ETL.")
     tablas = leer_fuentes(args.fuentes)

@@ -19,6 +19,9 @@ from pathlib import Path
 import duckdb
 
 RAIZ = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(RAIZ))
+from scripts.https_seguro import abrir_https
+
 DATOS = RAIZ / "datos"
 FUENTES = DATOS / "fuentes"
 ML = FUENTES / "ml-latest-small"
@@ -41,6 +44,7 @@ def ruta_sql(ruta: Path) -> str:
 def descargar_tmdb(destino: Path) -> None:
     if destino.is_file():
         return
+    print("Descargando metadatos TMDB desde Zenodo (HTTPS verificado)...", flush=True)
     destino.parent.mkdir(parents=True, exist_ok=True)
     temporal = destino.with_name(destino.name + ".parcial")
     try:
@@ -48,7 +52,7 @@ def descargar_tmdb(destino: Path) -> None:
             TMDB_URL, headers={"User-Agent": "MovieMatch-ETL-Educativo/1.0"}
         )
         md5 = hashlib.md5()  # integridad del archivo, no seguridad criptográfica
-        with urllib.request.urlopen(peticion, timeout=120) as origen, temporal.open("wb") as salida:
+        with abrir_https(peticion, timeout=120) as origen, temporal.open("wb") as salida:
             while True:
                 bloque = origen.read(1024 * 1024)
                 if not bloque:
@@ -82,6 +86,18 @@ def comprobar_fuentes(metadatos: Path) -> None:
             )
     if not metadatos.is_file():
         raise FileNotFoundError(f"No se encontró {metadatos}")
+
+
+def verificar_tmdb(ruta: Path) -> None:
+    """Comprueba el MD5 también si el alumno descargó el CSV con el navegador."""
+    huella = hashlib.md5()  # Checksum publicado: integridad, no firma digital.
+    with ruta.open("rb") as archivo:
+        for bloque in iter(lambda: archivo.read(1024 * 1024), b""):
+            huella.update(bloque)
+    if huella.hexdigest() != TMDB_MD5:
+        raise RuntimeError(
+            f"El MD5 de {ruta} no coincide con el dataset TMDB de referencia."
+        )
 
 
 def ejecutar_sql(con: duckdb.DuckDBPyConnection, rutas: dict[str, Path]) -> None:
@@ -283,6 +299,7 @@ def main() -> None:
     else:
         metadatos = args.metadata.expanduser().resolve()
     comprobar_fuentes(metadatos)
+    verificar_tmdb(metadatos)
     DATOS.mkdir(parents=True, exist_ok=True)
 
     con = duckdb.connect(str(RUTA_DUCKDB))

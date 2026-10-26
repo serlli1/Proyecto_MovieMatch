@@ -1,6 +1,6 @@
 """Apertura HTTPS verificada con certificados del sistema o de Mozilla.
 
-Nunca desactiva la verificación TLS. Se reutiliza para MovieLens y TMDB.
+Nunca desactiva la verificación TLS. Se utiliza para la descarga de TMDB en el ETL.
 """
 import ssl
 from urllib import error, request
@@ -37,11 +37,10 @@ def abrir_https(peticion, timeout=120):
             if not _error_de_certificado(exc):
                 raise
             ultimo_error = exc
-            print(f"Aviso: la verificación HTTPS con {nombre} ha fallado; "
-                  "se probará otro almacén de certificados.", flush=True)
+            print(f"Aviso: la verificación HTTPS con {nombre} ha fallado.", flush=True)
     raise RuntimeError(
         "No se pudo verificar el certificado HTTPS de "
-        f"{peticion.full_url}. Comprueba la fecha y hora de Windows, las "
+        f"{peticion.full_url}. Comprueba la fecha y hora del equipo, las "
         "actualizaciones de certificados y si hay un antivirus, VPN o proxy "
         "que inspeccione HTTPS. En ese caso, su certificado raíz debe ser "
         "de confianza para el sistema. No desactives la verificación SSL."
