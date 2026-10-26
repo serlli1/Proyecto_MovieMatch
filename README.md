@@ -154,9 +154,8 @@ Qdrant publica `127.0.0.1:6333` y Graph Service `127.0.0.1:9669`.
 
 ### MovieLens: descarga explícita del alumno
 
-Abre [MovieLens Latest Small](https://grouplens.org/datasets/movielens/latest/),
-descarga **ml-latest-small.zip** y guárdalo en Descargas. La referencia de esta práctica
-es la edición de septiembre de 2018. No elijas el dataset completo.
+Abre [MovieLens Latest Small](https://files.grouplens.org/datasets/movielens/ml-latest-small.zip),
+descarga **ml-latest-small.zip** y guárdalo en Descargas.
 
 **macOS**, si está en `~/Downloads`:
 
