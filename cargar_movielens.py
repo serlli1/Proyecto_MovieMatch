@@ -86,10 +86,11 @@ def cargar_lotes(con, db, modelo, total_esperado):
         FROM peliculas_qdrant ORDER BY movieId
     """)
     procesadas = 0
-    insertadas = 0
+    ultimo_tramo = 0
     lotes_totales = math.ceil(total_esperado / TAM_LOTE)
     print(f"[3/4] Procesando {total_esperado} películas en {lotes_totales} lotes.", flush=True)
-    for numero_lote in range(1, lotes_totales + 1):
+    print("  Preparando vectores E5 e insertando películas en Qdrant...", flush=True)
+    for _ in range(lotes_totales):
         filas = cursor.fetchmany(TAM_LOTE)
         if not filas:
             break
@@ -99,11 +100,6 @@ def cargar_lotes(con, db, modelo, total_esperado):
             pelicula = limpiar_fila(fila)
             peliculas.append(pelicula)
 
-        print(
-            f"  Lote {numero_lote}/{lotes_totales}: comprobando películas existentes "
-            "y preparando los vectores de consulta E5...",
-            flush=True,
-        )
         existentes = db.retrieve(
             COLECCION, ids=[p["movieId"] for p in peliculas],
             with_payload=True, with_vectors=False,
@@ -119,15 +115,9 @@ def cargar_lotes(con, db, modelo, total_esperado):
                 textos.append("passage: " + texto_de_pelicula(pelicula))
 
         # Prepara también query: para que las favoritas no se codifiquen en cada perfil.
-        # Este paso puede tardar: por eso se anuncia antes de ejecutarse.
         vectorizar_consultas([texto_de_pelicula(p) for p in peliculas])
 
         if pendientes:
-            print(
-                f"  Lote {numero_lote}/{lotes_totales}: generando embeddings "
-                f"de {len(pendientes)} películas e insertándolas en Qdrant...",
-                flush=True,
-            )
             vectores = modelo.encode(
                 textos,
                 batch_size=TAM_EMBEDDINGS,
@@ -144,15 +134,16 @@ def cargar_lotes(con, db, modelo, total_esperado):
                 puntos.append(punto)
 
             db.upsert(collection_name=COLECCION, points=puntos, wait=True)
-            insertadas += len(pendientes)
 
         procesadas += len(peliculas)
-        print(
-            f"  Progreso: {procesadas}/{total_esperado} ({procesadas / total_esperado:.1%}) "
-            f"| insertadas/actualizadas: {insertadas} "
-            f"| ya presentes: {procesadas - insertadas}",
-            flush=True,
-        )
+        tramo = 10 * procesadas // total_esperado
+        if procesadas == len(peliculas) or tramo > ultimo_tramo:
+            print(
+                f"  Progreso: {procesadas}/{total_esperado} "
+                f"({procesadas / total_esperado:.1%})",
+                flush=True,
+            )
+            ultimo_tramo = tramo
     return procesadas
 
 
@@ -168,7 +159,6 @@ def validar_carga(con, db):
     total_esperado = len(esperadas)
     ids = set()
     offset = None
-    paginas = 0
     while True:
         puntos, offset = db.scroll(
             COLECCION, limit=128, offset=offset, with_payload=True, with_vectors=True
@@ -182,8 +172,7 @@ def validar_carga(con, db):
             if not math.isfinite(norma) or abs(norma - 1) > 0.001:
                 raise RuntimeError(f"Vector no normalizado: {punto.id}")
             ids.add(punto.id)
-        paginas += 1
-        if paginas % 10 == 0 or offset is None:
+        if offset is None:
             print(
                 f"  Puntos validados: {len(ids)}/{total_esperado}",
                 flush=True,
