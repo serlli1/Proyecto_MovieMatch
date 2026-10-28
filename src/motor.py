@@ -14,7 +14,7 @@ MODELO = "intfloat/multilingual-e5-base"
 DIMENSION = 768
 TAM_EMBEDDINGS = 8
 CACHE_CONSULTAS = Path(__file__).resolve().parents[1] / "datos" / "consultas_e5.sqlite"
-URL_QDRANT = os.getenv("QDRANT_URL", "http://localhost:6333")
+URL_QDRANT = os.getenv("QDRANT_URL", "http://127.0.0.1:6333")
 
 
 @lru_cache(maxsize=1)
