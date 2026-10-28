@@ -1,3 +1,4 @@
+
 # MovieMatch 🎬
 
 ## 1. Qué vamos a construir
@@ -109,6 +110,99 @@ python -m pip check
 El ejecutable debe estar dentro de `.venv`; `pip check` debe responder
 `No broken requirements found.` No instales las bibliotecas una a una.
 
+### Aceleración opcional de embeddings: CUDA, MPS o CPU
+
+MovieMatch utiliza **Sentence Transformers** y **PyTorch** para generar los
+embeddings del modelo `intfloat/multilingual-e5-base`.
+
+Sentence Transformers selecciona automáticamente el dispositivo de cálculo
+disponible, siempre que PyTorch sea compatible con él:
+
+- **CUDA:** GPU NVIDIA compatible, principalmente en Windows y Linux.
+- **MPS:** GPU Apple Silicon en macOS.
+- **CPU:** equipos sin aceleración compatible.
+
+No es necesario modificar el código Python para seleccionar el dispositivo.
+Sin embargo, disponer de una GPU NVIDIA no garantiza que se esté utilizando:
+es necesario tener instalada una versión de PyTorch compatible con CUDA.
+
+#### Windows con GPU NVIDIA: instalación opcional de CUDA
+
+Después de instalar las dependencias de `requirements.txt`, los equipos con
+una GPU NVIDIA compatible pueden instalar una versión de PyTorch con CUDA.
+
+En Windows 11 con Python 3.11 y una NVIDIA RTX 5060 Laptop se ha probado
+satisfactoriamente la siguiente versión:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install "torch==2.14.1+cu130" --index-url https://download.pytorch.org/whl/cu130
+```
+
+Comprueba después que PyTorch reconoce la GPU:
+
+```powershell
+.\.venv\Scripts\python.exe -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU')"
+```
+
+En un equipo correctamente configurado, `torch.cuda.is_available()` debe
+devolver `True` y debe mostrarse el nombre de la GPU NVIDIA.
+
+Comprueba también las dependencias:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip check
+```
+
+Esta instalación es **opcional**. Requiere una GPU y controladores NVIDIA
+compatibles. En otros equipos debe consultarse el
+[selector oficial de PyTorch](https://pytorch.org/get-started/locally/)
+para elegir una versión adecuada.
+
+No se incluye CUDA como dependencia obligatoria de `requirements.txt`,
+porque impediría una instalación general compatible con macOS y otros equipos.
+
+Si el equipo no dispone de una GPU compatible, puede ejecutar MovieMatch
+utilizando CPU, aunque la generación de embeddings será más lenta.
+
+#### macOS con Apple Silicon: aceleración MPS
+
+En los Mac con Apple Silicon, PyTorch puede utilizar automáticamente
+la aceleración **MPS (Metal Performance Shaders)**.
+
+No es necesario instalar CUDA, ya que esta tecnología está destinada
+a las GPU NVIDIA.
+
+Con el entorno virtual activado, comprueba si MPS está disponible:
+
+```bash
+python -c "import torch; print(torch.backends.mps.is_available())"
+```
+
+El resultado debe ser `True` cuando PyTorch y el equipo admiten MPS.
+
+#### Comprobar qué dispositivo utiliza realmente MovieMatch
+
+En **macOS o Windows**, con el entorno virtual activado, ejecuta:
+
+```text
+python -c "from src.motor import obtener_modelo; print('Dispositivo E5:', obtener_modelo().device)"
+```
+
+Los resultados habituales son:
+
+| Resultado | Dispositivo utilizado |
+|---|---|
+| `cuda:0` | GPU NVIDIA mediante CUDA |
+| `mps:0` | GPU Apple Silicon mediante MPS |
+| `cpu` | Procesador del ordenador |
+
+Este comando carga el modelo E5 y puede descargarlo si todavía no está
+disponible en el equipo.
+
+La selección automática ya está implementada mediante
+`SentenceTransformer(MODELO)` en `src/motor.py`, por lo que no es necesario
+introducir condiciones específicas para Windows o macOS.
+
 ## 5. Arrancar Qdrant y NebulaGraph
 
 Ejecuta cada línea y comprueba que termine correctamente:
@@ -149,6 +243,40 @@ La secuencia puede repetirse: el registro detecta el host existente.
 Véanse [Storage Hosts de NebulaGraph](https://docs.nebula-graph.io/3.8.0/4.deployment-and-installation/manage-storage-host/)
 y [orden de arranque de Compose](https://docs.docker.com/compose/how-tos/startup-order/).
 Qdrant publica `127.0.0.1:6333` y Graph Service `127.0.0.1:9669`.
+
+### Conexión local con Qdrant: IPv4
+
+El cliente Python de Qdrant utiliza por defecto:
+
+```text
+http://127.0.0.1:6333
+```
+
+Se utiliza expresamente la dirección IPv4 `127.0.0.1` en lugar de `localhost`
+para evitar un problema de latencia observado en Windows.
+
+En algunas configuraciones, `localhost` se resuelve primero a la dirección
+IPv6 `::1`. Si Qdrant no acepta conexiones en esa dirección, el intento puede
+fallar después de varios segundos antes de utilizar IPv4.
+
+Este retraso puede repetirse en cada petición, afectando significativamente
+al rendimiento de las consultas y a la carga de Streamlit.
+
+La dirección predeterminada se configura en `src/motor.py`:
+
+```python
+URL_QDRANT = os.getenv("QDRANT_URL", "http://127.0.0.1:6333")
+```
+
+Esta configuración es válida cuando Python se ejecuta directamente en el
+equipo anfitrión y Qdrant publica el puerto 6333 mediante Docker Compose.
+
+La variable de entorno `QDRANT_URL` permite especificar otra dirección
+cuando sea necesario, por ejemplo, si la aplicación Python se ejecuta
+dentro de otro contenedor.
+
+No es necesario modificar las conexiones internas entre contenedores
+ni aumentar los recursos de Docker para resolver este problema.
 
 ## 6. Obtener los datasets
 
@@ -249,10 +377,20 @@ año, géneros, sinopsis y los identificadores externos. Hay índices `keyword` 
 `generos` e `integer` sobre `anio`.
 
 La primera ejecución descarga el modelo y genera embeddings en lotes de 8: puede
-consumir bastante memoria y tardar, especialmente en CPU. Espera el resumen
-`Carga completada: 9494 películas en 'peliculas_e5'`. El cargador verifica IDs,
-payloads, dimensiones y normas. Si se interrumpe, repetirlo continúa los puntos
-pendientes; no borra colecciones. Comprueba el resultado:
+consumir bastante memoria y tardar, especialmente en CPU.
+
+El tiempo de carga depende del dispositivo utilizado. Cuando PyTorch dispone de
+un backend compatible, Sentence Transformers puede aprovechar CUDA en NVIDIA
+o MPS en Apple Silicon, acelerando la generación de embeddings.
+
+Es recomendable comprobar el dispositivo en la etapa 4 antes de comenzar esta
+carga, especialmente en equipos Windows con GPU NVIDIA.
+
+Espera el resumen `Carga completada: 9494 películas en 'peliculas_e5'`.
+El cargador verifica IDs, payloads, dimensiones y normas. Si se interrumpe,
+repetirlo continúa los puntos pendientes; no borra colecciones.
+
+Comprueba el resultado:
 
 ```text
 python -c "from src.motor import cliente, COLECCION; db=cliente(); print(db.count(COLECCION, exact=True)); db.close()"
@@ -260,9 +398,27 @@ python -c "from src.motor import cliente, COLECCION; db=cliente(); print(db.coun
 
 También puedes abrir [el panel de Qdrant](http://127.0.0.1:6333/dashboard).
 Las consultas de favoritas se guardan en `datos/consultas_e5.sqlite` para reutilizarlas.
+
 Cambiar la representación exige una colección y una caché nuevas; comparar payloads
 no detecta cambios de estrategia. En instalaciones previas, `peliculas_v2` se conserva
 como respaldo; no es necesaria ni se crea en una instalación nueva.
+
+### Cambiar de CPU a GPU después de instalar MovieMatch
+
+Si las películas y sus embeddings ya están cargados correctamente en Qdrant,
+**no es necesario repetir `cargar_movielens.py`** por instalar posteriormente
+una versión de PyTorch con CUDA o por utilizar MPS.
+
+El cambio de backend afecta al dispositivo utilizado para nuevos cálculos,
+pero no obliga a regenerar los vectores almacenados.
+
+Los embeddings generados con CPU, CUDA y MPS pueden presentar pequeñas
+diferencias numéricas debidas a las operaciones en coma flotante, aunque
+se utilice el mismo modelo y configuración.
+
+Mientras se mantengan el modelo E5, los prefijos, la tokenización, las
+dimensiones y la normalización, no es necesario reconstruir la colección
+ni eliminar la caché SQLite por cambiar de backend.
 
 ## 9. Cargar NebulaGraph
 
@@ -326,6 +482,7 @@ Omite `deactivate` si no activaste el entorno.
 `stop` conserva los volúmenes `qdrant_data`, `nebula_meta` y `nebula_storage`.
 No borres volúmenes ni uses opciones para eliminarlos. `.gitignore` excluye datasets,
 bases, caché y respaldos. Las credenciales `root` / `nebula` son exclusivamente locales.
+
 Las variables opcionales `QDRANT_URL`, `NEBULA_HOST`, `NEBULA_PORT`, `NEBULA_USER` y
 `NEBULA_PASSWORD` permiten otras conexiones; la práctica utiliza los valores locales.
 
