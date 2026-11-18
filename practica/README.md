@@ -3,6 +3,14 @@
 Esta carpeta contiene los ejercicios para los compañeros, separados del programa.
 Los comandos se ejecutan desde la raíz del repositorio con `.venv` activado.
 
+## Archivos de esta carpeta
+
+| Archivo | Función |
+|---|---|
+| `README.md` | Guía de instalación, experimentación y preguntas para los compañeros (este documento). |
+| `practica_qdrant.py` | Permite crear, ver, buscar, actualizar y eliminar una película de prueba en la colección aislada `moviematch_practica`, sin modificar el catálogo real. |
+| `consultas_ejemplo.sql` | Incluye cinco consultas didácticas sobre DuckDB: recuentos, películas sin sinopsis, duplicados, integridad referencial y valoraciones. |
+
 Las dos fuentes se descargan manualmente desde el navegador según el README;
 el ETL solo valida y transforma los archivos locales.
 
