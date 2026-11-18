@@ -16,7 +16,7 @@ películas por su historia y recomienda títulos según preferencias de MovieLen
 | Streamlit | Dos pestañas: búsqueda y Top 10; recomendaciones y géneros favoritos |
 
 Los datos no vienen incluidos en el clon. Sigue las etapas en orden, desde la raíz
-del repositorio. Después podrás realizar los [ejercicios de terminal](docs/practica_terminal.md).
+del repositorio. Después podrás realizar los [ejercicios de terminal](practica/README.md).
 
 ## 2. Requisitos previos
 
@@ -309,7 +309,7 @@ datos/fuentes/ml-latest-small/ratings.csv
 ```
 
 No hace falta usar `tags.csv`. Las huellas de la edición de referencia y un comando
-para compararlas están en la [práctica](docs/practica_terminal.md#1-identificar-las-fuentes).
+para compararlas están en la [práctica](practica/README.md#1-identificar-las-fuentes).
 
 ### Sinopsis TMDB: descarga manual del alumno
 
@@ -510,9 +510,10 @@ Las variables opcionales `QDRANT_URL`, `NEBULA_HOST`, `NEBULA_PORT`, `NEBULA_USE
 
 ## Experimentar y comprobar
 
-Continúa con [la práctica de terminal](docs/practica_terminal.md): consultas,
-CRUD aislado, relaciones del grafo y mediciones. Conserva `buscar.py`, los SQL de
-`scripts/sql/` y `scripts/medir_rendimiento.py` como herramientas de trabajo.
+Los ejercicios de los compañeros están separados en [`practica/`](practica/README.md):
+consultas SQL, operaciones CRUD de Qdrant y actividades sobre el grafo.
+No intervienen en el arranque ni en la búsqueda habitual. El SQL del ETL
+permanece en `scripts/sql/preparar_catalogo.sql`.
 
 Las sinopsis son principalmente inglesas; los resultados dependen del catálogo y
 las preferencias de MovieLens. La similitud coseno no es una probabilidad. E5 es el

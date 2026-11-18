@@ -1,5 +1,8 @@
 # Práctica de terminal: MovieMatch
 
+Esta carpeta contiene los ejercicios para los compañeros, separados del programa.
+Los comandos se ejecutan desde la raíz del repositorio con `.venv` activado.
+
 Las dos fuentes se descargan manualmente desde el navegador según el README;
 el ETL solo valida y transforma los archivos locales.
 
@@ -66,7 +69,7 @@ En una instalación nueva no tiene por qué existir `peliculas_v2`.
 
 ```text
 python -c "import duckdb; con=duckdb.connect('datos/moviematch.duckdb',read_only=True); print(con.sql('SELECT count(*) AS peliculas, count(sinopsis) AS con_sinopsis FROM peliculas')); con.close()"
-python -c "import duckdb; from pathlib import Path; con=duckdb.connect('datos/moviematch.duckdb',read_only=True); print(con.execute(Path('scripts/sql/consultas_ejemplo.sql').read_text(encoding='utf-8')).fetchall()); con.close()"
+python -c "import duckdb; from pathlib import Path; con=duckdb.connect('datos/moviematch.duckdb',read_only=True); print(con.execute(Path('practica/consultas_ejemplo.sql').read_text(encoding='utf-8')).fetchall()); con.close()"
 ```
 
 La primera consulta debe devolver 9.742 y 9.494. El segundo comando ejecuta las
@@ -122,8 +125,8 @@ las películas sin año quedan fuera cuando se restringe el intervalo.
 ### 8. Crear una película de prueba aislada
 
 ```text
-python scripts/practica_qdrant.py crear
-python scripts/practica_qdrant.py ver
+python practica/practica_qdrant.py crear
+python practica/practica_qdrant.py ver
 ```
 
 Se crea **solo** `moviematch_practica` y su punto 1, «PRUEBA — La misión del aula»,
@@ -137,10 +140,10 @@ o un punto 1 sin marca de prueba tampoco se modifica.
 ### 9. Buscar la prueba y actualizar sus metadatos
 
 ```text
-python scripts/practica_qdrant.py buscar --texto "Una expedición espacial busca un planeta habitable"
-python scripts/practica_qdrant.py actualizar --anio 2030
-python scripts/practica_qdrant.py ver
-python scripts/practica_qdrant.py buscar --texto "Una expedición espacial busca un planeta habitable"
+python practica/practica_qdrant.py buscar --texto "Una expedición espacial busca un planeta habitable"
+python practica/practica_qdrant.py actualizar --anio 2030
+python practica/practica_qdrant.py ver
+python practica/practica_qdrant.py buscar --texto "Una expedición espacial busca un planeta habitable"
 ```
 
 Esperado: se recupera la película y el año pasa de 2026 a 2030. El año no forma parte
@@ -150,9 +153,9 @@ del texto vectorizado, por lo que esta actualización no requiere otro embedding
 ### 10. Revertir la escritura
 
 ```text
-python scripts/practica_qdrant.py eliminar
-python scripts/practica_qdrant.py ver
-python scripts/practica_qdrant.py buscar
+python practica/practica_qdrant.py eliminar
+python practica/practica_qdrant.py ver
+python practica/practica_qdrant.py buscar
 python -c "from src.motor import cliente, COLECCION; db=cliente(); print(db.count(COLECCION,exact=True)); db.close()"
 ```
 
@@ -209,19 +212,7 @@ al menos cinco películas valoradas en ese género. Son reglas de consulta, no f
 de eliminación del catálogo.
 **Pregunta:** ¿por qué no ordenar únicamente por la nota de una sola valoración?
 
-### 14. Medir sin confundir los tiempos
-
-```text
-python scripts/medir_rendimiento.py --repeticiones 6
-```
-
-Guarda primera llamada, media y mediana. El script separa generación/recuperación
-del embedding, petición a Qdrant y búsqueda completa. Las funciones del grafo
-incluyen conexión y procesamiento Python; no son tiempos internos del servidor.
-No borra índices ni cambia las bases. La variación entre perfiles depende del historial.
-**Pregunta:** ¿puedes atribuir una mejora a un índice sin comparar con y sin él?
-
-### 15. Terminar y volver a abrir
+### 14. Terminar y volver a abrir
 
 Detén Streamlit con `Ctrl+C` si lo tienes abierto, y ejecuta `docker compose stop`.
 Repite el arranque habitual de la etapa 11 del README; comprueba que siguen las
@@ -238,7 +229,7 @@ Validado el **26 de octubre de 2026 en macOS, con Python 3.11 y Docker Desktop**
   espera de Graph Service, registro ONLINE y segundo registro sin duplicados. Se retiraron
   solo esos contenedores temporales, sin tocar los servicios ni volúmenes habituales.
 - Todos los comandos Python de los ejercicios, incluido el recorrido nGQL, las búsquedas,
-  recomendaciones, métricas con seis repeticiones y el ciclo CRUD completo. La colección
+  recomendaciones y el ciclo CRUD completo. La colección
   `moviematch_practica` quedó vacía; el catálogo E5 conservó sus 9.494 películas.
 - Comparación completa de IDs, payloads y vectores Qdrant con DuckDB, y del grafo con
   sus CSV y estadísticas. No se volvieron a importar películas ni relaciones del catálogo.
