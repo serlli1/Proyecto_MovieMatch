@@ -7,12 +7,12 @@ from pathlib import Path
 import duckdb
 from qdrant_client import models
 
-from src.motor import (
+from consultas.motor import (
     COLECCION, DIMENSION, TAM_EMBEDDINGS, cliente, obtener_modelo,
     texto_de_pelicula, vectorizar_consultas,
 )
 
-RUTA_DUCKDB = Path(__file__).resolve().parent / "datos" / "moviematch.duckdb"
+RUTA_DUCKDB = Path(__file__).resolve().parents[1] / "datos" / "moviematch.duckdb"
 TAM_LOTE = 64
 
 
@@ -198,7 +198,7 @@ def validar_carga(con, db):
 def main():
     if not RUTA_DUCKDB.is_file():
         raise FileNotFoundError(
-            f"No existe {RUTA_DUCKDB}. Ejecuta primero scripts/preparar_datos.py."
+            f"No existe {RUTA_DUCKDB}. Ejecuta primero python -m integracion.preparar_datos."
         )
     with duckdb.connect(str(RUTA_DUCKDB), read_only=True) as con:
         print("[1/4] Comprobando el catálogo de DuckDB...", flush=True)

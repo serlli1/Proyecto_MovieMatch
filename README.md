@@ -66,7 +66,7 @@ git clone https://github.com/serlli1/Proyecto_MovieMatch.git
 cd Proyecto_MovieMatch
 ```
 
-Aquí deben estar `requirements.txt`, `docker-compose.yml` y `app.py`.
+Aquí deben estar `requirements.txt`, `docker-compose.yml` y las carpetas `aplicacion/`, `cargas/`, `integracion/`, `consultas/` y `practica/`.
 
 ## 4. Preparar Python
 
@@ -185,7 +185,7 @@ El resultado debe ser `True` cuando PyTorch y el equipo admiten MPS.
 En **macOS o Windows**, con el entorno virtual activado, ejecuta:
 
 ```text
-python -c "from src.motor import obtener_modelo; print('Dispositivo E5:', obtener_modelo().device)"
+python -c "from consultas.motor import obtener_modelo; print('Dispositivo E5:', obtener_modelo().device)"
 ```
 
 Los resultados habituales son:
@@ -210,7 +210,7 @@ Ejecuta cada línea y comprueba que termine correctamente:
 ```text
 docker compose up -d
 docker compose up -d --wait metad graphd
-python cargar_nebula.py --registrar-hosts
+python -m cargas.cargar_nebula --registrar-hosts
 docker compose up -d --wait
 docker compose ps
 docker ps
@@ -353,11 +353,11 @@ las fuentes automáticamente. La descarga inicial del modelo E5 en la etapa 8 se
 ## 7. Ejecutar el ETL con DuckDB
 
 ```text
-python scripts/preparar_datos.py
+python -m integracion.preparar_datos
 ```
 
 Primero se comprueban los cuatro CSV locales y el MD5 de TMDB; si fallan, no se
-abre DuckDB. El SQL de `scripts/sql/preparar_catalogo.sql` cruza MovieLens con TMDB por `tmdbId`,
+abre DuckDB. El SQL de `integracion/preparar_catalogo.sql` cruza MovieLens con TMDB por `tmdbId`,
 comprueba IMDb cuando está disponible, resuelve coincidencias y normaliza sinopsis y
 géneros. Conserva todo el catálogo maestro en `datos/moviematch.duckdb`.
 
@@ -382,13 +382,13 @@ La consola debe terminar con `ETL completado: 9742 películas, 9494 con sinopsis
 Consulta el informe con `python -m json.tool datos/reporte_etl.json`.
 Las cifras corresponden a las fuentes de referencia; si difieren, investiga la fuente.
 Este comando reconstruye las tablas locales: no lo repitas para iniciar la aplicación.
-Si solo faltan exportaciones y DuckDB existe, usa `python scripts/preparar_datos.py --solo-exportar`.
+Si solo faltan exportaciones y DuckDB existe, usa `python -m integracion.preparar_datos --solo-exportar`.
 Este modo trabaja sobre la base preparada en lectura y no necesita los CSV originales.
 
 ## 8. Cargar Qdrant
 
 ```text
-python cargar_movielens.py
+python -m cargas.cargar_movielens
 ```
 
 Lee DuckDB y genera vectores normalizados con **intfloat/multilingual-e5-base**:
@@ -415,7 +415,7 @@ repetirlo continúa los puntos pendientes; no borra colecciones.
 Comprueba el resultado:
 
 ```text
-python -c "from src.motor import cliente, COLECCION; db=cliente(); print(db.count(COLECCION, exact=True)); db.close()"
+python -c "from consultas.motor import cliente, COLECCION; db=cliente(); print(db.count(COLECCION, exact=True)); db.close()"
 ```
 
 También puedes abrir [el panel de Qdrant](http://127.0.0.1:6333/dashboard).
@@ -428,7 +428,7 @@ como respaldo; no es necesaria ni se crea en una instalación nueva.
 ### Cambiar de CPU a GPU después de instalar MovieMatch
 
 Si las películas y sus embeddings ya están cargados correctamente en Qdrant,
-**no es necesario repetir `cargar_movielens.py`** por instalar posteriormente
+**no es necesario repetir `python -m cargas.cargar_movielens`** por instalar posteriormente
 una versión de PyTorch con CUDA o por utilizar MPS.
 
 El cambio de backend afecta al dispositivo utilizado para nuevos cálculos,
@@ -445,7 +445,7 @@ ni eliminar la caché SQLite por cambiar de backend.
 ## 9. Cargar NebulaGraph
 
 ```text
-python cargar_nebula.py
+python -m cargas.cargar_nebula
 ```
 
 Lee los cuatro CSV y crea el espacio `moviematch`. El cargador vuelve a comprobar
@@ -462,7 +462,7 @@ Debe finalizar con `Grafo preparado: 9476 películas, 610 usuarios y 100244 valo
 Comprueba una consulta real:
 
 ```text
-python -c "from src.grafo import usuarios; print(len(usuarios()))"
+python -c "from consultas.grafo import usuarios; print(len(usuarios()))"
 ```
 
 No uses `--depurar` en la práctica: es una operación de mantenimiento con respaldo,
@@ -471,7 +471,7 @@ no un paso de instalación ni una forma de reiniciar la base.
 ## 10. Abrir Streamlit
 
 ```text
-python -m streamlit run app.py --server.address 127.0.0.1
+python -m streamlit run aplicacion/app.py --server.address 127.0.0.1
 ```
 
 Abre **http://127.0.0.1:8501**. Prueba una descripción y sus filtros; cambia de perfil
@@ -489,7 +489,7 @@ Después, en ambos sistemas:
 
 ```text
 docker compose up -d --wait
-python -m streamlit run app.py --server.address 127.0.0.1
+python -m streamlit run aplicacion/app.py --server.address 127.0.0.1
 ```
 
 No repitas descargas, ETL ni cargas. Para terminar: `Ctrl+C` y después:
@@ -513,7 +513,7 @@ Las variables opcionales `QDRANT_URL`, `NEBULA_HOST`, `NEBULA_PORT`, `NEBULA_USE
 Los ejercicios de los compañeros están separados en [`practica/`](practica/README.md):
 consultas SQL, operaciones CRUD de Qdrant y actividades sobre el grafo.
 No intervienen en el arranque ni en la búsqueda habitual. El SQL del ETL
-permanece en `scripts/sql/preparar_catalogo.sql`.
+permanece en `integracion/preparar_catalogo.sql`.
 
 Las sinopsis son principalmente inglesas; los resultados dependen del catálogo y
 las preferencias de MovieLens. La similitud coseno no es una probabilidad. E5 es el

@@ -56,8 +56,8 @@ si una huella difiere, identifica la versión antes de comparar resultados.
 ```text
 docker compose ps
 docker compose exec -T graphd ls -lah /logs
-python -c "from src.motor import cliente; db=cliente(); print(db.get_collections()); db.close()"
-python -c "from src.grafo import usuarios; print('Usuarios:',len(usuarios()))"
+python -c "from consultas.motor import cliente; db=cliente(); print(db.get_collections()); db.close()"
+python -c "from consultas.grafo import usuarios; print('Usuarios:',len(usuarios()))"
 ```
 
 Esperado: cuatro servicios, archivos de registro internos de NebulaGraph,
@@ -81,7 +81,7 @@ Lee el archivo SQL para identificar las anteriores.
 ### 4. Contar e inspeccionar Qdrant
 
 ```text
-python -c "from src.motor import cliente, COLECCION; db=cliente(); print(db.count(COLECCION,exact=True)); info=db.get_collection(COLECCION); print(info.config.params.vectors); print(info.config.hnsw_config); print(info.payload_schema); db.close()"
+python -c "from consultas.motor import cliente, COLECCION; db=cliente(); print(db.count(COLECCION,exact=True)); info=db.get_collection(COLECCION); print(info.config.params.vectors); print(info.config.hnsw_config); print(info.payload_schema); db.close()"
 ```
 
 Esperado: 9.494 puntos, tamaño 768, distancia Cosine, configuración HNSW e índices
@@ -92,7 +92,7 @@ toda consulta lo utilice: el plan también depende del tamaño y de los filtros.
 ### 5. Recuperar una película por su ID
 
 ```text
-python -c "from src.motor import obtener_peliculas; from pprint import pprint; pprint(obtener_peliculas([1]))"
+python -c "from consultas.motor import obtener_peliculas; from pprint import pprint; pprint(obtener_peliculas([1]))"
 ```
 
 Esperado: ID 1, Toy Story, año, géneros, sinopsis, `tmdbId` e `imdbId`.
@@ -101,8 +101,8 @@ Esperado: ID 1, Toy Story, año, géneros, sinopsis, `tmdbId` e `imdbId`.
 ### 6. Buscar por significado
 
 ```text
-python buscar.py "Un hombre descubre que vive en una realidad simulada" --limite 3
-python buscar.py "A man discovers that his reality is a computer simulation" --limite 3
+python -m aplicacion.buscar "Un hombre descubre que vive en una realidad simulada" --limite 3
+python -m aplicacion.buscar "A man discovers that his reality is a computer simulation" --limite 3
 ```
 
 Obtendrás hasta tres películas con sinopsis y similitud; no se exige un orden fijo
@@ -112,10 +112,10 @@ entre idiomas. Las consultas usan `query: `; los documentos se cargaron con `pas
 ### 7. Comparar filtros y parámetros
 
 ```text
-python buscar.py "aventuras en el espacio" --limite 5
-python buscar.py "aventuras en el espacio" --genero "Ciencia ficción" --limite 5
-python buscar.py "aventuras en el espacio" --desde 1990 --hasta 2010 --limite 5
-python buscar.py "aventuras en el espacio" --genero "Ciencia ficción" --desde 1990 --hasta 2010 --limite 3
+python -m aplicacion.buscar "aventuras en el espacio" --limite 5
+python -m aplicacion.buscar "aventuras en el espacio" --genero "Ciencia ficción" --limite 5
+python -m aplicacion.buscar "aventuras en el espacio" --desde 1990 --hasta 2010 --limite 5
+python -m aplicacion.buscar "aventuras en el espacio" --genero "Ciencia ficción" --desde 1990 --hasta 2010 --limite 3
 ```
 
 Comprueba géneros, años y número de resultados. Los límites de año son inclusivos;
@@ -156,7 +156,7 @@ del texto vectorizado, por lo que esta actualización no requiere otro embedding
 python practica/practica_qdrant.py eliminar
 python practica/practica_qdrant.py ver
 python practica/practica_qdrant.py buscar
-python -c "from src.motor import cliente, COLECCION; db=cliente(); print(db.count(COLECCION,exact=True)); db.close()"
+python -c "from consultas.motor import cliente, COLECCION; db=cliente(); print(db.count(COLECCION,exact=True)); db.close()"
 ```
 
 Esperado: `[]`, cero resultados en la colección de prueba y **9.494** puntos en el
@@ -167,9 +167,9 @@ reutilizarse. Si interrumpes el ejercicio, ejecuta `eliminar` cuando puedas cont
 ### 11. Consultar usuarios, valoraciones y recomendaciones
 
 ```text
-python -c "from src import grafo; from pprint import pprint; print(grafo.usuarios()[:10]); pprint(grafo.perfil(1)[:5])"
-python -c "from src import grafo; from pprint import pprint; perfil=grafo.perfil(1); pprint(grafo.colaborativas(1,perfil))"
-python -c "from src import grafo; from src.motor import recomendar_contenido; from pprint import pprint; pprint(recomendar_contenido(grafo.perfil(1)))"
+python -c "from consultas import grafo; from pprint import pprint; print(grafo.usuarios()[:10]); pprint(grafo.perfil(1)[:5])"
+python -c "from consultas import grafo; from pprint import pprint; perfil=grafo.perfil(1); pprint(grafo.colaborativas(1,perfil))"
+python -c "from consultas import grafo; from consultas.motor import recomendar_contenido; from pprint import pprint; pprint(recomendar_contenido(grafo.perfil(1)))"
 ```
 
 Compara usuario 1 y usuario 2. Las colaborativas usan hasta 30 vecinos con al menos
@@ -184,7 +184,7 @@ que termina el `with` antes de `exit()`. No pegues indicadores `>>>` ni el delim
 Markdown. Funciona igual en el intérprete de macOS y de Windows.
 
 ```python
-from src.grafo import conectar, ejecutar
+from consultas.grafo import conectar, ejecutar
 from pprint import pprint
 with conectar() as sesion:
     pprint(ejecutar(sesion, 'SHOW HOSTS'))
@@ -204,7 +204,7 @@ El recorrido parte del VID `usuario:1`; no necesita crear un índice de propieda
 ### 13. Top 10 y preferencias
 
 ```text
-python -c "from src import grafo; from pprint import pprint; pprint(grafo.top_comunidad()); pprint(grafo.generos_favoritos(1))"
+python -c "from consultas import grafo; from pprint import pprint; pprint(grafo.top_comunidad()); pprint(grafo.generos_favoritos(1))"
 ```
 
 El Top 10 requiere al menos 20 valoraciones por película; los géneros favoritos,

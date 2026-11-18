@@ -7,9 +7,9 @@ import sys
 import time
 from pathlib import Path
 
-from src.grafo import ESPACIO, conectar, ejecutar
+from consultas.grafo import ESPACIO, conectar, ejecutar
 
-DATOS = Path(__file__).resolve().parent / "datos" / "procesados"
+DATOS = Path(__file__).resolve().parents[1] / "datos" / "procesados"
 TAM_LOTE = 500
 
 

@@ -2,7 +2,7 @@
 """MovieMatch: ETL reproducible de MovieLens + metadatos de TMDB con DuckDB.
 
 Ejecutar desde la raíz del repositorio:
-    python scripts/preparar_datos.py
+    python -m integracion.preparar_datos
 
 Requiere MovieLens en datos/fuentes/ml-latest-small/ y movies_metadata.csv
 en datos/fuentes/, descargados previamente con el navegador.
@@ -26,7 +26,7 @@ ML = FUENTES / "ml-latest-small"
 TMDB = FUENTES / "movies_metadata.csv"
 RUTA_DUCKDB = DATOS / "moviematch.duckdb"
 EXPORTACIONES = DATOS / "procesados"
-RUTA_SQL = RAIZ / "scripts" / "sql" / "preparar_catalogo.sql"
+RUTA_SQL = RAIZ / "integracion" / "preparar_catalogo.sql"
 
 TMDB_URL = "https://zenodo.org/records/18099452"
 TMDB_MD5 = "42bf3ef8c208a01a4776955875978b1e"  # checksum publicado en Zenodo

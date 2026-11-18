@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from qdrant_client import models
-from src.motor import DIMENSION, cliente, obtener_modelo, texto_de_pelicula, vectorizar
+from consultas.motor import DIMENSION, cliente, obtener_modelo, texto_de_pelicula, vectorizar
 
 COLECCION_PRUEBA = "moviematch_practica"
 ID_PRUEBA = 1

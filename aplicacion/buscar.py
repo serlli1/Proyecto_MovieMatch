@@ -1,7 +1,7 @@
-"""Uso: python buscar.py "viajes espaciales" --genero "Ciencia ficción"""
+"""Uso: python -m aplicacion.buscar "viajes espaciales" --genero "Ciencia ficción"""
 import argparse
 
-from src.motor import buscar_semanticamente
+from consultas.motor import buscar_semanticamente
 
 
 def main():

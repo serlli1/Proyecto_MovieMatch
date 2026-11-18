@@ -1,8 +1,8 @@
-"""Buscador Streamlit: python -m streamlit run app.py."""
+"""Buscador Streamlit: python -m streamlit run aplicacion/app.py."""
 import streamlit as st
 
-from src import grafo
-from src.motor import (
+from consultas import grafo
+from consultas.motor import (
     COLECCION, buscar_semanticamente, obtener_metadatos, obtener_peliculas,
     recomendar_contenido,
 )
@@ -75,7 +75,7 @@ def mostrar_buscador():
     except Exception as exc:
         st.error("No se ha podido conectar con Qdrant o recuperar el catálogo.")
         st.info("Comprueba que Docker Desktop está iniciado y que has ejecutado `docker compose up -d`.")
-        st.info("Si falta el catálogo, ejecuta `python cargar_movielens.py` después del ETL.")
+        st.info("Si falta el catálogo, ejecuta `python -m cargas.cargar_movielens` después del ETL.")
         with st.expander("Detalles técnicos"):
             st.exception(exc)
         return
