@@ -311,24 +311,44 @@ datos/fuentes/ml-latest-small/ratings.csv
 No hace falta usar `tags.csv`. Las huellas de la edición de referencia y un comando
 para compararlas están en la [práctica](docs/practica_terminal.md#1-identificar-las-fuentes).
 
-### Sinopsis TMDB: descarga dentro de la etapa ETL
+### Sinopsis TMDB: descarga manual del alumno
 
-Al ejecutar la etapa 7, el ETL descargará `movies_metadata.csv` si falta, desde
-[Zenodo, DOI 10.5281/zenodo.18099452](https://doi.org/10.5281/zenodo.18099452),
-y lo guardará en `datos/fuentes/movies_metadata.csv`. Comprueba el MD5 de la descarga:
-`42bf3ef8c208a01a4776955875978b1e`. Se reutiliza si ya existe,
-y el ETL comprueba también su integridad cuando se ha descargado manualmente.
+Abre [el dataset de Zenodo](https://zenodo.org/records/18099452) en el navegador y
+descarga **movies_metadata.csv**. Guárdalo, sin modificar su contenido, en:
 
-Alternativa manual: descarga ese archivo desde Zenodo con el navegador y colócalo
-en la misma ruta. Para otra ubicación, utiliza `python scripts/preparar_datos.py --metadata RUTA`
-(con la ruta entre comillas si contiene espacios). No se necesita una clave de TMDB:
-usamos una copia del dataset, no su API.
+```text
+datos/fuentes/movies_metadata.csv
+```
 
-La descarga del ETL usa `scripts/https_seguro.py`, con verificación TLS y almacenes
-Python, sistema y Mozilla; `truststore` y `certifi` están en `requirements.txt`.
-Si todos fallan, revisa fecha/hora y certificados del equipo; ante un proxy del centro,
-consulta al administrador. **No desactives SSL ni uses hosts de confianza para eludirlo.**
-Este helper cubre Zenodo; las descargas del modelo se gestionan mediante Hugging Face.
+Puedes moverlo con Finder o el Explorador. Si está en la carpeta habitual de Descargas:
+
+**macOS:**
+
+```bash
+cp "$HOME/Downloads/movies_metadata.csv" datos/fuentes/
+```
+
+**Windows (PowerShell):**
+
+```powershell
+Copy-Item -LiteralPath "$env:USERPROFILE\Downloads\movies_metadata.csv" -Destination datos/fuentes/
+```
+
+Si usas otra carpeta de descargas, adapta la ruta. No abras ni vuelvas a guardar el
+CSV con Excel: su contenido debe conservar el MD5 de referencia
+`42bf3ef8c208a01a4776955875978b1e`. No se necesita una clave de TMDB: se utiliza la
+copia publicada en Zenodo, no su API.
+
+**Ambos datasets se descargan manualmente antes del ETL.** Comprueba sus rutas y
+el checksum sin abrir ni modificar la base de datos (mismo comando en ambos sistemas):
+
+```text
+python -c "from scripts.preparar_datos import comprobar_fuentes, verificar_tmdb, TMDB; comprobar_fuentes(TMDB); verificar_tmdb(TMDB); print('Fuentes locales disponibles y MD5 correcto.')"
+```
+
+Si falta un CSV, el error indica su ruta y la página de descarga. Si el MD5 difiere,
+vuelve a descargar el archivo original desde Zenodo. El ETL no descarga ni repara
+las fuentes automáticamente. La descarga inicial del modelo E5 en la etapa 8 se mantiene.
 
 ## 7. Ejecutar el ETL con DuckDB
 
@@ -336,7 +356,8 @@ Este helper cubre Zenodo; las descargas del modelo se gestionan mediante Hugging
 python scripts/preparar_datos.py
 ```
 
-El SQL de `scripts/sql/preparar_catalogo.sql` cruza MovieLens con TMDB por `tmdbId`,
+Primero se comprueban los cuatro CSV locales y el MD5 de TMDB; si fallan, no se
+abre DuckDB. El SQL de `scripts/sql/preparar_catalogo.sql` cruza MovieLens con TMDB por `tmdbId`,
 comprueba IMDb cuando está disponible, resuelve coincidencias y normaliza sinopsis y
 géneros. Conserva todo el catálogo maestro en `datos/moviematch.duckdb`.
 
@@ -362,6 +383,7 @@ Consulta el informe con `python -m json.tool datos/reporte_etl.json`.
 Las cifras corresponden a las fuentes de referencia; si difieren, investiga la fuente.
 Este comando reconstruye las tablas locales: no lo repitas para iniciar la aplicación.
 Si solo faltan exportaciones y DuckDB existe, usa `python scripts/preparar_datos.py --solo-exportar`.
+Este modo trabaja sobre la base preparada en lectura y no necesita los CSV originales.
 
 ## 8. Cargar Qdrant
 

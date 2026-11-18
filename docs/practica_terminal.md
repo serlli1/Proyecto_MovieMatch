@@ -1,5 +1,8 @@
 # Práctica de terminal: MovieMatch
 
+Las dos fuentes se descargan manualmente desde el navegador según el README;
+el ETL solo valida y transforma los archivos locales.
+
 **Objetivo:** observar cómo un catálogo integrado en DuckDB se consulta como vectores
 en Qdrant y como relaciones en NebulaGraph. Entrega los comandos, una muestra de
 salida y tus respuestas. No hace falta copiar sinopsis ni vectores completos.
@@ -229,7 +232,8 @@ Repite el arranque habitual de la etapa 11 del README; comprueba que siguen las
 
 Validado el **26 de octubre de 2026 en macOS, con Python 3.11 y Docker Desktop**:
 
-- Descarga HTTPS de las fuentes, verificación de sus hashes y ejecución real del ETL.
+- Obtención de las fuentes, verificación de sus hashes y ejecución real del ETL.
+  Esta validación histórica precede al procedimiento actual de descarga manual.
 - Primer arranque de NebulaGraph con almacenamiento vacío en contenedores aislados:
   espera de Graph Service, registro ONLINE y segundo registro sin duplicados. Se retiraron
   solo esos contenedores temporales, sin tocar los servicios ni volúmenes habituales.
@@ -239,17 +243,24 @@ Validado el **26 de octubre de 2026 en macOS, con Python 3.11 y Docker Desktop**
 - Comparación completa de IDs, payloads y vectores Qdrant con DuckDB, y del grafo con
   sus CSV y estadísticas. No se volvieron a importar películas ni relaciones del catálogo.
 - Compilación, `pip check`, opciones CLI, enlaces locales y `git diff --check`.
-  Pruebas puntuales de rechazo de certificados y protección de puntos no marcados como prueba.
+  Pruebas de protección de puntos no marcados como prueba.
 
 No se ejecutó una instalación limpia completa de herramientas y dependencias, ni se
 repitió la generación masiva de embeddings. Windows/PowerShell y las descargas mediante
 su navegador/`Expand-Archive` se revisaron documentalmente, **no se ejecutaron** aquí.
 Los ejercicios de parada se dejan al alumno para no interrumpir los servicios habituales.
 
+Revisión del **18 de noviembre de 2026**: presencia de los cuatro CSV y MD5 local
+comprobados; errores de archivo ausente y checksum incorrecto detectados antes de
+abrir DuckDB. Validaciones relacionales en lectura y cinco exportaciones temporales
+idénticas a las existentes. Consultas colaborativas y validación del grafo equivalentes
+a la versión anterior mediante respuestas simuladas. Docker no estaba iniciado:
+no se repitieron consultas en vivo a Qdrant ni NebulaGraph, ni se reconstruyeron bases.
+
 **macOS:** probar instalación de herramientas en un equipo sin preparar, clon nuevo,
 creación/activación de `.venv`, instalación de requisitos, descarga y descompresión,
-HTTPS de Zenodo, secuencia de registro, ETL, cargas iniciales, Streamlit y persistencia
-tras detener y arrancar. Los comandos operativos se verifican en el Mac de desarrollo;
+descarga manual del CSV de Zenodo, comprobación MD5, secuencia de registro, ETL,
+cargas iniciales, Streamlit y persistencia tras detener y arrancar. Los comandos operativos se verifican en el Mac de desarrollo;
 eso no sustituye una instalación limpia completa.
 
 **Windows (PowerShell):** probar además el lanzador `py -3.11`, activación con la

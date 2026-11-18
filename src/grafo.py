@@ -82,6 +82,7 @@ def colaborativas(user_id, valoradas):
     for pelicula in valoradas:
         excluidas.append(int(pelicula["movieId"]))
     with conectar() as sesion:
+        # 1. Vecinos: al menos tres favoritas compartidas, hasta 30 usuarios.
         vecinos = ejecutar(sesion, f'''
             MATCH (u:Usuario)-[a:VALORA]->(comun:Pelicula)<-[b:VALORA]-(vecino:Usuario)
             WHERE id(u) == "usuario:{int(user_id)}" AND id(vecino) != id(u)
@@ -96,9 +97,11 @@ def colaborativas(user_id, valoradas):
         ids_vecinos = []
         casos = []
         for vecino in vecinos:
-            ids_vecinos.append(vecino["vid"])
-            casos.append(f'WHEN "{vecino["vid"]}" THEN {vecino["coincidencias"]}')
-        # Cada vecino aporta sus coincidencias a las películas que recomienda.
+            identificador = vecino["vid"]
+            coincidencias = vecino["coincidencias"]
+            ids_vecinos.append(identificador)
+            casos.append(f'WHEN "{identificador}" THEN {coincidencias}')
+        # 2. Cada vecino aporta sus coincidencias a las películas que recomienda.
         peso = "CASE id(u) " + " ".join(casos) + " ELSE 0 END"
         peliculas = ejecutar(sesion, f'''
             MATCH (u:Usuario)-[v:VALORA]->(p:Pelicula)
@@ -109,6 +112,7 @@ def colaborativas(user_id, valoradas):
                    count(DISTINCT u) AS apoyos, avg(v.puntuacion) AS media
             ORDER BY afinidad DESC, apoyos DESC, media DESC, movieId LIMIT 5
         ''')
+        # 3. Añade los géneros de las cinco candidatas elegidas por el grafo.
         ids = []
         for pelicula in peliculas:
             ids.append("pelicula:" + str(pelicula["movieId"]))

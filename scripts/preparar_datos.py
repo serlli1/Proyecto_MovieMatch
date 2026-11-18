@@ -4,7 +4,8 @@
 Ejecutar desde la raíz del repositorio:
     python scripts/preparar_datos.py
 
-Requiere los CSV originales de MovieLens en datos/fuentes/ml-latest-small/.
+Requiere MovieLens en datos/fuentes/ml-latest-small/ y movies_metadata.csv
+en datos/fuentes/, descargados previamente con el navegador.
 NO toca Qdrant ni NebulaGraph; produce una base DuckDB y exportaciones.
 """
 
@@ -12,15 +13,12 @@ import argparse
 import hashlib
 import json
 import sys
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
 import duckdb
 
 RAIZ = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(RAIZ))
-from scripts.https_seguro import abrir_https
 
 DATOS = RAIZ / "datos"
 FUENTES = DATOS / "fuentes"
@@ -30,7 +28,7 @@ RUTA_DUCKDB = DATOS / "moviematch.duckdb"
 EXPORTACIONES = DATOS / "procesados"
 RUTA_SQL = RAIZ / "scripts" / "sql" / "preparar_catalogo.sql"
 
-TMDB_URL = "https://zenodo.org/records/18099452/files/movies_metadata.csv?download=1"
+TMDB_URL = "https://zenodo.org/records/18099452"
 TMDB_MD5 = "42bf3ef8c208a01a4776955875978b1e"  # checksum publicado en Zenodo
 
 
@@ -41,62 +39,34 @@ def ruta_sql(ruta: Path) -> str:
     return "'" + ruta_escapada + "'"
 
 
-def descargar_tmdb(destino: Path) -> None:
-    if destino.is_file():
-        return
-    print("Descargando metadatos TMDB desde Zenodo (HTTPS verificado)...", flush=True)
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    temporal = destino.with_name(destino.name + ".parcial")
-    try:
-        peticion = urllib.request.Request(
-            TMDB_URL, headers={"User-Agent": "MovieMatch-ETL-Educativo/1.0"}
-        )
-        md5 = hashlib.md5()  # integridad del archivo, no seguridad criptográfica
-        with abrir_https(peticion, timeout=120) as origen, temporal.open("wb") as salida:
-            while True:
-                bloque = origen.read(1024 * 1024)
-                if not bloque:
-                    break
-                salida.write(bloque)
-                md5.update(bloque)
-        if temporal.stat().st_size < 1_000_000:
-            raise RuntimeError("La descarga es demasiado pequeña para ser el CSV esperado.")
-        if md5.hexdigest() != TMDB_MD5:
-            raise RuntimeError(
-                "El checksum no coincide con el publicado en Zenodo. "
-                "Comprueba la descarga o utiliza --metadata con otra copia validada."
-            )
-        temporal.replace(destino)
-    except Exception as exc:
-        temporal.unlink(missing_ok=True)
-        raise RuntimeError(
-            f"No se pudieron obtener los metadatos de Zenodo: {exc}\n"
-            "Descarga movies_metadata.csv desde https://zenodo.org/records/18099452 "
-            "y guárdalo en datos/fuentes/movies_metadata.csv; vuelve a ejecutarlo."
-        ) from exc
-
-
 def comprobar_fuentes(metadatos: Path) -> None:
     for nombre in ("movies.csv", "links.csv", "ratings.csv"):
         archivo = ML / nombre
         if not archivo.is_file():
             raise FileNotFoundError(
                 f"Falta {archivo}. Los CSV deben estar en datos/fuentes/ml-latest-small/. "
-                "Descarga y descomprime ml-latest-small.zip desde GroupLens (ver README.md)."
+                "Descarga y descomprime https://files.grouplens.org/datasets/movielens/ml-latest-small.zip"
             )
     if not metadatos.is_file():
-        raise FileNotFoundError(f"No se encontró {metadatos}")
+        raise FileNotFoundError(
+            f"Falta {metadatos}. Descarga movies_metadata.csv desde {TMDB_URL} "
+            "y colócalo en datos/fuentes/movies_metadata.csv."
+        )
 
 
 def verificar_tmdb(ruta: Path) -> None:
-    """Comprueba el MD5 también si el alumno descargó el CSV con el navegador."""
+    """Valida los bytes del CSV local antes de modificar DuckDB."""
     huella = hashlib.md5()  # Checksum publicado: integridad, no firma digital.
     with ruta.open("rb") as archivo:
-        for bloque in iter(lambda: archivo.read(1024 * 1024), b""):
+        while True:
+            bloque = archivo.read(1024 * 1024)
+            if not bloque:
+                break
             huella.update(bloque)
     if huella.hexdigest() != TMDB_MD5:
         raise RuntimeError(
-            f"El MD5 de {ruta} no coincide con el dataset TMDB de referencia."
+            f"El MD5 de {ruta} no coincide con el dataset TMDB de referencia. "
+            f"Vuelve a descargar movies_metadata.csv desde {TMDB_URL}."
         )
 
 
@@ -263,6 +233,7 @@ def resumen(con: duckdb.DuckDBPyConnection, comprobaciones: dict, rutas: dict) -
         "controles_integridad": comprobaciones,
         "archivos_exportados": rutas,
         "observaciones": [
+            "El ETL utiliza CSV locales descargados manualmente; no realiza descargas.",
             "La colección existente de Qdrant no se modifica.",
             "Las sinopsis son mayoritariamente inglesas.",
             "NebulaGraph recibe solo películas de peliculas_qdrant con al menos una valoración.",
@@ -278,10 +249,6 @@ def resumen(con: duckdb.DuckDBPyConnection, comprobaciones: dict, rutas: dict) -
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--metadata", type=Path,
-        help="CSV de metadatos TMDB existente en otra ubicación",
-    )
-    parser.add_argument(
         "--solo-exportar", action="store_true",
         help="Regenera las exportaciones desde DuckDB en modo de solo lectura",
     )
@@ -293,24 +260,18 @@ def main() -> None:
             reporte = resumen(con, integridad, archivos)
         print(f"Exportaciones preparadas: {reporte['peliculas_para_nebula']} películas para NebulaGraph.")
         return
-    if args.metadata is None:
-        metadatos = TMDB
-        descargar_tmdb(metadatos)
-    else:
-        metadatos = args.metadata.expanduser().resolve()
-    comprobar_fuentes(metadatos)
-    verificar_tmdb(metadatos)
+    comprobar_fuentes(TMDB)
+    verificar_tmdb(TMDB)
     DATOS.mkdir(parents=True, exist_ok=True)
 
-    con = duckdb.connect(str(RUTA_DUCKDB))
-    try:
+    with duckdb.connect(str(RUTA_DUCKDB)) as con:
         con.execute("BEGIN TRANSACTION")
         try:
             ejecutar_sql(con, {
                 "MOVIES_CSV": ML / "movies.csv",
                 "LINKS_CSV": ML / "links.csv",
                 "RATINGS_CSV": ML / "ratings.csv",
-                "TMDB_CSV": metadatos,
+                "TMDB_CSV": TMDB,
             })
             integridad = validar(con)
             con.execute("COMMIT")
@@ -319,8 +280,6 @@ def main() -> None:
             raise
         archivos = exportar(con)
         reporte = resumen(con, integridad, archivos)
-    finally:
-        con.close()
 
     print(
         f"ETL completado: {reporte['peliculas_movielens']} películas, "

@@ -1,4 +1,6 @@
+
 """Carga por lotes el catálogo de DuckDB en Qdrant, conservando movieId."""
+
 import sys
 import math
 from contextlib import closing
@@ -21,10 +23,13 @@ def preparar_coleccion(db):
         "generos": models.PayloadSchemaType.KEYWORD,
         "anio": models.PayloadSchemaType.INTEGER,
     }
+
     esquema = {}
+
     if db.collection_exists(COLECCION):
         info = db.get_collection(COLECCION)
         config = info.config.params.vectors
+
         if (
             not isinstance(config, models.VectorParams)
             or config.size != DIMENSION
@@ -34,15 +39,21 @@ def preparar_coleccion(db):
                 f"La colección '{COLECCION}' requiere vectores de {DIMENSION} "
                 "dimensiones y distancia coseno. No se ha modificado."
             )
+
         esquema = info.payload_schema or {}
+
         for campo, tipo in indices.items():
             if campo in esquema and esquema[campo].data_type != tipo:
-                raise RuntimeError(f"El índice '{campo}' debe ser de tipo {tipo.value}.")
+                raise RuntimeError(
+                    f"El índice '{campo}' debe ser de tipo {tipo.value}."
+                )
+
     else:
         db.create_collection(
             collection_name=COLECCION,
             vectors_config=models.VectorParams(
-                size=DIMENSION, distance=models.Distance.COSINE
+                size=DIMENSION,
+                distance=models.Distance.COSINE,
             ),
         )
 
@@ -58,14 +69,19 @@ def preparar_coleccion(db):
 
 def limpiar_fila(fila):
     movie_id, titulo, anio, generos, tmdb_id, imdb_id, sinopsis = fila
+
     if movie_id is None or not isinstance(sinopsis, str) or not sinopsis.strip():
         raise ValueError(f"Película sin ID o sinopsis: {movie_id!r}")
+
     if anio is not None:
         anio = int(anio)
+
     if generos is None:
         generos = []
+
     if tmdb_id is not None:
         tmdb_id = int(tmdb_id)
+
     if imdb_id is not None:
         imdb_id = str(imdb_id)
 
@@ -83,40 +99,65 @@ def limpiar_fila(fila):
 def cargar_lotes(con, db, modelo, total_esperado):
     cursor = con.execute("""
         SELECT movieId, titulo, anio, generos, tmdbId, imdbId, sinopsis
-        FROM peliculas_qdrant ORDER BY movieId
+        FROM peliculas_qdrant
+        ORDER BY movieId
     """)
+
     procesadas = 0
     ultimo_tramo = 0
     lotes_totales = math.ceil(total_esperado / TAM_LOTE)
-    print(f"[3/4] Procesando {total_esperado} películas en {lotes_totales} lotes.", flush=True)
-    print("  Preparando vectores E5 e insertando películas en Qdrant...", flush=True)
+
+    print(
+        f"[3/4] Procesando {total_esperado} películas "
+        f"en {lotes_totales} lotes.",
+        flush=True,
+    )
+    print(
+        "  Preparando vectores E5 e insertando películas en Qdrant...",
+        flush=True,
+    )
+
     for _ in range(lotes_totales):
         filas = cursor.fetchmany(TAM_LOTE)
+
         if not filas:
             break
 
         peliculas = []
+
         for fila in filas:
             pelicula = limpiar_fila(fila)
             peliculas.append(pelicula)
 
+        # Comprobar qué películas están ya almacenadas.
         existentes = db.retrieve(
-            COLECCION, ids=[p["movieId"] for p in peliculas],
-            with_payload=True, with_vectors=False,
+            COLECCION,
+            ids=[p["movieId"] for p in peliculas],
+            with_payload=True,
+            with_vectors=False,
         )
+
         guardadas = {}
+
         for punto in existentes:
             guardadas[punto.id] = punto.payload
+
         pendientes = []
         textos = []
+
         for pelicula in peliculas:
             if guardadas.get(pelicula["movieId"]) != pelicula:
                 pendientes.append(pelicula)
-                textos.append("passage: " + texto_de_pelicula(pelicula))
+                textos.append(
+                    "passage: " + texto_de_pelicula(pelicula)
+                )
 
-        # Prepara también query: para que las favoritas no se codifiquen en cada perfil.
-        vectorizar_consultas([texto_de_pelicula(p) for p in peliculas])
+        # Preparar la caché de vectores de consulta E5.
+        vectorizar_consultas([
+            texto_de_pelicula(p) for p in peliculas
+        ])
 
+        # Generar e insertar solamente los vectores necesarios.
         if pendientes:
             vectores = modelo.encode(
                 textos,
@@ -124,7 +165,9 @@ def cargar_lotes(con, db, modelo, total_esperado):
                 normalize_embeddings=True,
                 show_progress_bar=False,
             )
+
             puntos = []
+
             for pelicula, vector in zip(pendientes, vectores, strict=True):
                 punto = models.PointStruct(
                     id=pelicula["movieId"],
@@ -133,10 +176,16 @@ def cargar_lotes(con, db, modelo, total_esperado):
                 )
                 puntos.append(punto)
 
-            db.upsert(collection_name=COLECCION, points=puntos, wait=True)
+            db.upsert(
+                collection_name=COLECCION,
+                points=puntos,
+                wait=True,
+            )
 
+        # Mostrar el progreso aproximadamente cada 10 %.
         procesadas += len(peliculas)
         tramo = 10 * procesadas // total_esperado
+
         if procesadas == len(peliculas) or tramo > ultimo_tramo:
             print(
                 f"  Progreso: {procesadas}/{total_esperado} "
@@ -144,6 +193,7 @@ def cargar_lotes(con, db, modelo, total_esperado):
                 flush=True,
             )
             ultimo_tramo = tramo
+
     return procesadas
 
 
@@ -152,75 +202,156 @@ def validar_carga(con, db):
         SELECT movieId, titulo, anio, generos, tmdbId, imdbId, sinopsis
         FROM peliculas_qdrant
     """).fetchall()
+
+    # Construir las películas esperadas a partir de DuckDB.
     esperadas = {}
+
     for fila in filas:
         pelicula = limpiar_fila(fila)
         esperadas[pelicula["movieId"]] = pelicula
+
     total_esperado = len(esperadas)
     ids = set()
     offset = None
+
+    # Recorrer todos los puntos almacenados en Qdrant.
     while True:
         puntos, offset = db.scroll(
-            COLECCION, limit=128, offset=offset, with_payload=True, with_vectors=True
+            collection_name=COLECCION,
+            limit=128,
+            offset=offset,
+            with_payload=True,
+            with_vectors=True,
         )
+
         for punto in puntos:
+            # Comprobar identificadores y metadatos.
             if punto.id in ids or punto.payload != esperadas.get(punto.id):
-                raise RuntimeError(f"ID o metadatos incorrectos: {punto.id}")
+                raise RuntimeError(
+                    f"ID o metadatos incorrectos: {punto.id}"
+                )
+
+            # Comprobar la dimensión del embedding.
             if len(punto.vector) != DIMENSION:
-                raise RuntimeError(f"Dimensión incorrecta: {punto.id}")
-            norma = math.sqrt(sum(valor * valor for valor in punto.vector))
-            if not math.isfinite(norma) or abs(norma - 1) > 0.001:
-                raise RuntimeError(f"Vector no normalizado: {punto.id}")
-            ids.add(punto.id)
-        if offset is None:
-            print(
-                f"  Puntos validados: {len(ids)}/{total_esperado}",
-                flush=True,
+                raise RuntimeError(
+                    f"Dimensión incorrecta: {punto.id}"
+                )
+
+            # Comprobar que el vector esté normalizado.
+            norma = math.sqrt(
+                sum(valor * valor for valor in punto.vector)
             )
+
+            if not math.isfinite(norma) or abs(norma - 1) > 0.001:
+                raise RuntimeError(
+                    f"Vector no normalizado: {punto.id}"
+                )
+
+            ids.add(punto.id)
+
+        # Qdrant devuelve offset=None al terminar el recorrido.
         if offset is None:
             break
+
+    # Comprobar que no falte ni sobre ninguna película.
     if ids != set(esperadas):
-        raise RuntimeError("Los IDs de Qdrant no coinciden con DuckDB.")
+        raise RuntimeError(
+            "Los IDs de Qdrant no coinciden con DuckDB."
+        )
+
+    print(
+        f"  Puntos validados: {len(ids)}/{total_esperado}",
+        flush=True,
+    )
+
     return len(ids)
 
 
 def main():
     if not RUTA_DUCKDB.is_file():
         raise FileNotFoundError(
-            f"No existe {RUTA_DUCKDB}. Ejecuta primero scripts/preparar_datos.py."
+            f"No existe {RUTA_DUCKDB}. "
+            "Ejecuta primero scripts/preparar_datos.py."
         )
-    with duckdb.connect(str(RUTA_DUCKDB), read_only=True) as con:
-        print("[1/4] Comprobando el catálogo de DuckDB...", flush=True)
-        esperado, ids_unicos, validas = con.execute("""
-            SELECT count(*), count(DISTINCT movieId),
-                   count(*) FILTER (WHERE movieId >= 0 AND titulo IS NOT NULL
-                                    AND sinopsis IS NOT NULL AND trim(sinopsis) <> '')
-            FROM peliculas_qdrant
-        """).fetchone()
-        if esperado < 100:
-            raise RuntimeError(
-                f"Solo hay {esperado} películas para Qdrant. Revisa el informe del ETL."
-            )
-        if ids_unicos != esperado or validas != esperado:
-            raise RuntimeError("Catálogo con IDs duplicados, IDs inválidos o textos ausentes.")
 
-        print(f"Catálogo preparado: {esperado} películas.", flush=True)
+    with duckdb.connect(str(RUTA_DUCKDB), read_only=True) as con:
         print(
-            "[2/4] Descargando (si es necesario) y cargando el modelo E5-base...",
+            "[1/4] Comprobando el catálogo de DuckDB...",
             flush=True,
         )
+
+        esperado, ids_unicos, validas = con.execute("""
+            SELECT count(*),
+                   count(DISTINCT movieId),
+                   count(*) FILTER (
+                       WHERE movieId >= 0
+                         AND titulo IS NOT NULL
+                         AND sinopsis IS NOT NULL
+                         AND trim(sinopsis) <> ''
+                   )
+            FROM peliculas_qdrant
+        """).fetchone()
+
+        if esperado < 100:
+            raise RuntimeError(
+                f"Solo hay {esperado} películas para Qdrant. "
+                "Revisa el informe del ETL."
+            )
+
+        if ids_unicos != esperado or validas != esperado:
+            raise RuntimeError(
+                "Catálogo con IDs duplicados, IDs inválidos "
+                "o textos ausentes."
+            )
+
+        print(
+            f"Catálogo preparado: {esperado} películas.",
+            flush=True,
+        )
+
+        print(
+            "[2/4] Descargando (si es necesario) "
+            "y cargando el modelo E5-base...",
+            flush=True,
+        )
+
         modelo = obtener_modelo()
+
         if modelo.get_embedding_dimension() != DIMENSION:
-            raise RuntimeError(f"El modelo debe generar vectores de {DIMENSION} dimensiones.")
-        print(f"Modelo E5-base cargado ({DIMENSION} dimensiones).", flush=True)
+            raise RuntimeError(
+                f"El modelo debe generar vectores "
+                f"de {DIMENSION} dimensiones."
+            )
+
+        print(
+            f"Modelo E5-base cargado ({DIMENSION} dimensiones).",
+            flush=True,
+        )
+
         with closing(cliente()) as db:
             preparar_coleccion(db)
-            procesadas = cargar_lotes(con, db, modelo, esperado)
-            print("[4/4] Validando películas, metadatos y vectores en Qdrant...", flush=True)
+
+            procesadas = cargar_lotes(
+                con, db, modelo, esperado
+            )
+
+            print(
+                "[4/4] Validando películas, metadatos "
+                "y vectores en Qdrant...",
+                flush=True,
+            )
+
             total = validar_carga(con, db)
+
             if procesadas != esperado:
-                raise RuntimeError("No se han procesado todas las películas.")
-    print(f"Carga completada: {total} películas en '{COLECCION}'.", flush=True)
+                raise RuntimeError(
+                    "No se han procesado todas las películas."
+                )
+
+    print(
+        f"Carga completada: {total} películas en '{COLECCION}'.",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

@@ -173,25 +173,30 @@ def importar(sesion, tablas):
     insertar_lotes(sesion, "INSERT EDGE PERTENECE_A()", valores)
 
 
+def normalizar_filas(filas, columnas):
+    """Iguala tipos del CSV y del grafo para comparar los mismos campos."""
+    normalizadas = set()
+    for fila in filas:
+        valores = []
+        for columna in columnas:
+            valor = fila[columna]
+            if valor is None or valor == "":
+                valor = ""
+            elif columna == "puntuacion":
+                valor = float(valor)
+            else:
+                valor = str(valor)
+            valores.append(valor)
+        normalizadas.add(tuple(valores))
+    return normalizadas
+
+
 def validar_importacion(sesion, tablas):
     for nombre, consulta in CONSULTAS.items():
         filas = ejecutar(sesion, consulta)
         columnas = list(filas[0]) if filas else []
-        esperadas = set()
-        actuales = set()
-        for origen, destino in ((tablas[nombre], esperadas), (filas, actuales)):
-            for fila in origen:
-                valores = []
-                for columna in columnas:
-                    valor = fila[columna]
-                    if valor is None or valor == "":
-                        valor = ""
-                    elif columna == "puntuacion":
-                        valor = float(valor)
-                    else:
-                        valor = str(valor)
-                    valores.append(valor)
-                destino.add(tuple(valores))
+        esperadas = normalizar_filas(tablas[nombre], columnas)
+        actuales = normalizar_filas(filas, columnas)
         if len(filas) != len(tablas[nombre]) or actuales != esperadas:
             raise RuntimeError(f"La importación de {nombre} no coincide con los CSV.")
 
