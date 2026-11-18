@@ -250,12 +250,15 @@ repitió la generación masiva de embeddings. Windows/PowerShell y las descargas
 su navegador/`Expand-Archive` se revisaron documentalmente, **no se ejecutaron** aquí.
 Los ejercicios de parada se dejan al alumno para no interrumpir los servicios habituales.
 
-Revisión del **18 de noviembre de 2026**: presencia de los cuatro CSV y MD5 local
-comprobados; errores de archivo ausente y checksum incorrecto detectados antes de
-abrir DuckDB. Validaciones relacionales en lectura y cinco exportaciones temporales
-idénticas a las existentes. Consultas colaborativas y validación del grafo equivalentes
-a la versión anterior mediante respuestas simuladas. Docker no estaba iniciado:
-no se repitieron consultas en vivo a Qdrant ni NebulaGraph, ni se reconstruyeron bases.
+Revisión del **18 de noviembre de 2026**: se comprobaron los cuatro CSV y el
+MD5 de TMDB, los errores de fuentes ausentes o incorrectas, las validaciones
+relacionales y cinco exportaciones temporales idénticas a las existentes.
+Las consultas de grafo se compararon inicialmente mediante respuestas simuladas.
+Posteriormente, con Docker iniciado en macOS, se comprobaron Qdrant (9.494
+películas, identificadores, metadatos y normalización de embeddings) y NebulaGraph
+(610 usuarios, 232 valoraciones del usuario 1 y cinco recomendaciones colaborativas).
+Streamlit abrió correctamente y se realizó una revisión visual básica.
+No se reconstruyeron bases de datos ni se hicieron pruebas nativas en Windows.
 
 **macOS:** probar instalación de herramientas en un equipo sin preparar, clon nuevo,
 creación/activación de `.venv`, instalación de requisitos, descarga y descompresión,
